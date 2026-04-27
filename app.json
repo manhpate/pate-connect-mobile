@@ -2,6 +2,7 @@
   "expo": {
     "name": "Pate Connect",
     "slug": "pate-connect-mobile",
+    "scheme": "com.pate.connect",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,14 +15,16 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "vn.pate.connect"
+      "bundleIdentifier": "com.pate.connect",
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#151a22"
       },
-      "package": "vn.pate.connect",
+      "package": "com.pate.connect",
+      "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
@@ -29,7 +32,8 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      "expo-web-browser"
     ]
   }
 }

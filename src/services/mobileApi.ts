@@ -16,6 +16,19 @@ export const loginWithPasswordApi = (tenDangNhap: string, password: string) =>
     },
   }) as Promise<ApiEnvelope<{ access_token?: string; account?: unknown }>>;
 
+export const loginWithGoogleApi = (payload: {
+  uid: string;
+  email: string;
+  displayName: string;
+  photoURL?: string;
+}) =>
+  apiClient.post('/api/v1/login', {
+    data: {
+      ...payload,
+      kieu_dn: 'gg',
+    },
+  }) as Promise<ApiEnvelope<{ access_token?: string; account?: unknown }>>;
+
 export const checkAccountApi = () =>
   apiClient.get('/api/v1/check_account') as Promise<ApiEnvelope<{ access_token?: string } & Record<string, unknown>>>;
 

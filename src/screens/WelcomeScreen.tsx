@@ -1,17 +1,34 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import {
+  GOOGLE_ANDROID_CLIENT_ID,
+  GOOGLE_IOS_CLIENT_ID,
+  GOOGLE_WEB_CLIENT_ID,
+} from '../config/googleAuth';
 import { useAppSession } from '../context/AppSessionContext';
 import { palette, radius, shadows, spacing } from '../theme/tokens';
 
+WebBrowser.maybeCompleteAuthSession();
+
 export function WelcomeScreen() {
-  const { authState, authError, signInWithPassword } = useAppSession();
+  const { authState, authError, signInWithGoogleProfile, signInWithPassword } = useAppSession();
   const [tenDangNhap, setTenDangNhap] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const isBootstrapping = authState === 'loading';
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    iosClientId: GOOGLE_IOS_CLIENT_ID,
+    androidClientId: GOOGLE_ANDROID_CLIENT_ID,
+    webClientId: GOOGLE_WEB_CLIENT_ID,
+    scopes: ['profile', 'email'],
+    selectAccount: true,
+  });
 
   const xuLyDangNhap = async () => {
     if (!tenDangNhap.trim() || !password.trim()) {
@@ -25,6 +42,65 @@ export function WelcomeScreen() {
       setSubmitting(false);
     }
   };
+
+  const googleErrorText = useMemo(() => {
+    if (!response || response.type !== 'error') return '';
+    return response.error?.message || 'Đăng nhập Google thất bại.';
+  }, [response]);
+
+  useEffect(() => {
+    if (!response || response.type !== 'success') {
+      return;
+    }
+
+    const accessToken = response.authentication?.accessToken;
+    if (!accessToken) {
+      setGoogleSubmitting(false);
+      return;
+    }
+
+    let cancelled = false;
+    const loginGoogle = async () => {
+      try {
+        const infoResponse = await fetch('https://www.googleapis.com/userinfo/v2/me', {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+        const profile = (await infoResponse.json()) as {
+          id?: string;
+          email?: string;
+          name?: string;
+          picture?: string;
+        };
+
+        if (!infoResponse.ok || !profile?.email || !profile?.id) {
+          throw new Error('Không đọc được thông tin tài khoản Google.');
+        }
+
+        if (cancelled) return;
+
+        await signInWithGoogleProfile({
+          uid: String(profile.id),
+          email: String(profile.email),
+          displayName: String(profile.name || profile.email),
+          photoURL: profile.picture || '',
+        });
+      } catch (error) {
+        console.warn('Đăng nhập Google mobile thất bại:', error);
+      } finally {
+        if (!cancelled) {
+          setGoogleSubmitting(false);
+        }
+      }
+    };
+
+    void loginGoogle();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [response, signInWithGoogleProfile]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -71,13 +147,39 @@ export function WelcomeScreen() {
               </>
             )}
           </Pressable>
+          <Pressable
+            style={[styles.googleButton, (!request || googleSubmitting || isBootstrapping) && styles.buttonDisabled]}
+            disabled={!request || googleSubmitting || isBootstrapping}
+            onPress={async () => {
+              setGoogleSubmitting(true);
+              try {
+                const result = await promptAsync();
+                if (result.type !== 'success') {
+                  setGoogleSubmitting(false);
+                }
+              } catch (error) {
+                console.warn('Không mở được luồng Google Sign-In:', error);
+                setGoogleSubmitting(false);
+              }
+            }}
+          >
+            {googleSubmitting ? (
+              <ActivityIndicator color={palette.ink} />
+            ) : (
+              <>
+                <Ionicons name="logo-google" size={18} color={palette.ink} />
+                <Text style={styles.googleButtonText}>Đăng nhập Google</Text>
+              </>
+            )}
+          </Pressable>
           {authError ? <Text style={styles.errorText}>{authError}</Text> : null}
+          {googleErrorText ? <Text style={styles.errorText}>{googleErrorText}</Text> : null}
         </View>
 
         <View style={styles.noteCard}>
           <Text style={styles.noteTitle}>Lưu ý hiện tại</Text>
           <Text style={styles.noteText}>
-            App mobile đã nối đăng nhập thật bằng tài khoản `app.invaihn.vn` và đang đọc dữ liệu chat thật từ server. Luồng Google native cho khách hàng sẽ cần cấu hình OAuth client riêng cho Android/iOS trước khi bật.
+            App mobile đã nối đăng nhập thật bằng tài khoản app và đã bật luồng Google sign-in cho Firebase project hiện tại. Nếu Android production cần ổn định hoàn toàn, bạn nên bổ sung SHA-1/SHA-256 cho app Android trong Firebase để sinh Android OAuth client riêng.
           </Text>
         </View>
       </View>
@@ -159,6 +261,22 @@ const styles = StyleSheet.create({
   },
   loginButtonText: {
     color: palette.surface,
+    fontWeight: '800',
+    fontSize: 15,
+  },
+  googleButton: {
+    minHeight: 50,
+    borderRadius: radius.pill,
+    backgroundColor: '#f6f7fb',
+    borderWidth: 1,
+    borderColor: palette.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    flexDirection: 'row',
+  },
+  googleButtonText: {
+    color: palette.ink,
     fontWeight: '800',
     fontSize: 15,
   },

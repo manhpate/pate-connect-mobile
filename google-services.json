@@ -1,0 +1,83 @@
+{
+  "project_info": {
+    "project_number": "1001728301885",
+    "firebase_url": "https://app-pate-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "app-pate",
+    "storage_bucket": "app-pate.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1001728301885:android:c72de64a01e27843e34354",
+        "android_client_info": {
+          "package_name": "com.myreactnativeapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1001728301885-v8vq8lipg0gqr43e4bfv7c22uclatj59.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDPPtB4TYahYlShZO-jfkLxtF-relZetqc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1001728301885-v8vq8lipg0gqr43e4bfv7c22uclatj59.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1001728301885-aauals89uci3boope87sdqsqvejdkgtv.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.pate.connect"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1001728301885:android:992543732037c727e34354",
+        "android_client_info": {
+          "package_name": "com.pate.connect"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1001728301885-v8vq8lipg0gqr43e4bfv7c22uclatj59.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDPPtB4TYahYlShZO-jfkLxtF-relZetqc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1001728301885-v8vq8lipg0gqr43e4bfv7c22uclatj59.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1001728301885-aauals89uci3boope87sdqsqvejdkgtv.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.pate.connect"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

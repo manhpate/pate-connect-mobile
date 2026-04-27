@@ -5,6 +5,7 @@ import { AUTH_TOKEN_STORAGE_KEY } from '../config/appConfig';
 import {
   checkAccountApi,
   ensureWebsiteChatGroupRoomApi,
+  loginWithGoogleApi,
   loginWithPasswordApi,
   logoutApi,
   markAllNotificationsReadApi,
@@ -56,6 +57,12 @@ interface AppSessionContextValue {
   rooms: GroupRoom[];
   notifications: NotificationItem[];
   signInWithPassword: (tenDangNhap: string, password: string) => Promise<SignInResult>;
+  signInWithGoogleProfile: (profile: {
+    uid: string;
+    email: string;
+    displayName: string;
+    photoURL?: string;
+  }) => Promise<SignInResult>;
   signOut: () => Promise<void>;
   refreshConversations: () => Promise<void>;
   refreshRooms: () => Promise<void>;
@@ -306,6 +313,32 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     }
   }, [hydrateAuthenticatedUser]);
 
+  const signInWithGoogleProfile = useCallback(
+    async (profile: { uid: string; email: string; displayName: string; photoURL?: string }) => {
+      setAuthError('');
+      try {
+        const response = await loginWithGoogleApi(profile);
+        if (Number(response?.EC) !== 0 || !response?.DT?.access_token || !response?.DT?.account) {
+          const error = response?.EM || 'Đăng nhập Google thất bại';
+          setAuthError(error);
+          return { ok: false, error };
+        }
+
+        await hydrateAuthenticatedUser(
+          response.DT.account as Record<string, unknown>,
+          String(response.DT.access_token || ''),
+        );
+
+        return { ok: true };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Không đăng nhập Google được';
+        setAuthError(message);
+        return { ok: false, error: message };
+      }
+    },
+    [hydrateAuthenticatedUser],
+  );
+
   const signOut = useCallback(async () => {
     try {
       await logoutApi();
@@ -520,6 +553,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       rooms,
       notifications,
       signInWithPassword,
+      signInWithGoogleProfile,
       signOut,
       refreshConversations,
       refreshRooms,
@@ -561,6 +595,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       rooms,
       sendConversationMessage,
       sendRoomMessage,
+      signInWithGoogleProfile,
       signInWithPassword,
       signOut,
     ],
