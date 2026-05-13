@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -11,6 +11,7 @@ import {
   GOOGLE_WEB_CLIENT_ID,
 } from '../config/googleAuth';
 import { useAppSession } from '../context/AppSessionContext';
+import { signInFirebaseWithGooglePopup, signInFirebaseWithGoogleToken } from '../services/firebaseAuth';
 import { palette, radius, shadows, spacing } from '../theme/tokens';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -21,6 +22,7 @@ export function WelcomeScreen() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
+  const [googleError, setGoogleError] = useState('');
   const isBootstrapping = authState === 'loading';
   const [request, response, promptAsync] = Google.useAuthRequest({
     iosClientId: GOOGLE_IOS_CLIENT_ID,
@@ -29,6 +31,7 @@ export function WelcomeScreen() {
     scopes: ['profile', 'email'],
     selectAccount: true,
   });
+  const isGoogleDisabled = (Platform.OS !== 'web' && !request) || googleSubmitting || isBootstrapping;
 
   const xuLyDangNhap = async () => {
     if (!tenDangNhap.trim() || !password.trim()) {
@@ -44,50 +47,49 @@ export function WelcomeScreen() {
   };
 
   const googleErrorText = useMemo(() => {
+    if (googleError) return googleError;
     if (!response || response.type !== 'error') return '';
     return response.error?.message || 'Đăng nhập Google thất bại.';
-  }, [response]);
+  }, [googleError, response]);
 
   useEffect(() => {
     if (!response || response.type !== 'success') {
       return;
     }
 
+    if (Platform.OS === 'web') {
+      return;
+    }
+
     const accessToken = response.authentication?.accessToken;
-    if (!accessToken) {
+    const idToken = response.authentication?.idToken || response.params?.id_token;
+    if (!accessToken && !idToken) {
       setGoogleSubmitting(false);
+      setGoogleError('Google không trả token đăng nhập.');
       return;
     }
 
     let cancelled = false;
     const loginGoogle = async () => {
       try {
-        const infoResponse = await fetch('https://www.googleapis.com/userinfo/v2/me', {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
+        setGoogleError('');
+        const profile = await signInFirebaseWithGoogleToken({
+          accessToken,
+          idToken,
         });
-        const profile = (await infoResponse.json()) as {
-          id?: string;
-          email?: string;
-          name?: string;
-          picture?: string;
-        };
-
-        if (!infoResponse.ok || !profile?.email || !profile?.id) {
-          throw new Error('Không đọc được thông tin tài khoản Google.');
-        }
 
         if (cancelled) return;
 
         await signInWithGoogleProfile({
-          uid: String(profile.id),
-          email: String(profile.email),
-          displayName: String(profile.name || profile.email),
-          photoURL: profile.picture || '',
+          uid: profile.uid,
+          email: profile.email,
+          displayName: profile.displayName,
+          photoURL: profile.photoURL || '',
         });
       } catch (error) {
-        console.warn('Đăng nhập Google mobile thất bại:', error);
+        const message = error instanceof Error ? error.message : 'Đăng nhập Google thất bại.';
+        setGoogleError(message);
+        console.warn('Đăng nhập Google Firebase thất bại:', error);
       } finally {
         if (!cancelled) {
           setGoogleSubmitting(false);
@@ -148,18 +150,31 @@ export function WelcomeScreen() {
             )}
           </Pressable>
           <Pressable
-            style={[styles.googleButton, (!request || googleSubmitting || isBootstrapping) && styles.buttonDisabled]}
-            disabled={!request || googleSubmitting || isBootstrapping}
+            style={[styles.googleButton, isGoogleDisabled && styles.buttonDisabled]}
+            disabled={isGoogleDisabled}
             onPress={async () => {
               setGoogleSubmitting(true);
+              setGoogleError('');
               try {
+                if (Platform.OS === 'web') {
+                  const profile = await signInFirebaseWithGooglePopup();
+                  await signInWithGoogleProfile(profile);
+                  return;
+                }
+
                 const result = await promptAsync();
                 if (result.type !== 'success') {
                   setGoogleSubmitting(false);
                 }
               } catch (error) {
+                const message = error instanceof Error ? error.message : 'Không mở được luồng Google Sign-In.';
+                setGoogleError(message);
                 console.warn('Không mở được luồng Google Sign-In:', error);
                 setGoogleSubmitting(false);
+              } finally {
+                if (Platform.OS === 'web') {
+                  setGoogleSubmitting(false);
+                }
               }
             }}
           >

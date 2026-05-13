@@ -12,24 +12,31 @@ export function CustomerFilesScreen() {
   const [files, setFiles] = useState<GroupFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const room = useMemo(
-    () => rooms.find((item) => item.id === String(currentUser?.primaryRoomId || '')) ?? rooms[0],
+  const roomId = useMemo(
+    () => (currentUser?.primaryRoomId ? String(currentUser.primaryRoomId) : rooms[0]?.id || ''),
     [currentUser?.primaryRoomId, rooms],
   );
+  const room = useMemo(() => rooms.find((item) => item.id === roomId), [roomId, rooms]);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser?.id) return;
 
     let cancelled = false;
     const hydrate = async () => {
       setLoading(true);
       setError('');
       try {
-        const ensuredRoom = room || (await ensureCustomerPrimaryRoom());
-        if (!ensuredRoom) {
+        let nextRoomId = roomId;
+        if (!nextRoomId) {
+          const ensuredRoom = await ensureCustomerPrimaryRoom();
+          nextRoomId = ensuredRoom?.id || '';
+        }
+
+        if (!nextRoomId) {
           throw new Error('Tài khoản này chưa có nhóm chat khả dụng.');
         }
-        const nextFiles = await loadRoomFiles(ensuredRoom.id);
+
+        const nextFiles = await loadRoomFiles(nextRoomId);
         if (!cancelled) {
           setFiles(nextFiles);
         }
@@ -49,7 +56,7 @@ export function CustomerFilesScreen() {
     return () => {
       cancelled = true;
     };
-  }, [currentUser, ensureCustomerPrimaryRoom, loadRoomFiles, room]);
+  }, [currentUser?.id, ensureCustomerPrimaryRoom, loadRoomFiles, roomId]);
 
   return (
     <ScreenFrame

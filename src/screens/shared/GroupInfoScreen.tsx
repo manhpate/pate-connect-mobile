@@ -9,7 +9,7 @@ import { GroupRoom, RootStackParamList } from '../../types/app';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupInfo'>;
 
-export function GroupInfoScreen({ route }: Props) {
+export function GroupInfoScreen({ navigation, route }: Props) {
   const { currentUser, loadRoomInfo, renameRoom, removeMemberFromRoom } = useAppSession();
   const [room, setRoom] = useState<GroupRoom | null>(null);
   const [draftName, setDraftName] = useState('');
@@ -53,6 +53,7 @@ export function GroupInfoScreen({ route }: Props) {
     <ScreenFrame
       title="Thông tin nhóm"
       subtitle="Sửa tên nhóm, xem thành viên và quản lý người trong nhóm theo quyền."
+      onBack={() => navigation.goBack()}
       scroll={false}
     >
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>

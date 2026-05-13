@@ -14,7 +14,7 @@ export const loginWithPasswordApi = (tenDangNhap: string, password: string) =>
       password,
       kieu_dn: 'bt',
     },
-  }) as Promise<ApiEnvelope<{ access_token?: string; account?: unknown }>>;
+  }) as Promise<ApiEnvelope<{ access_token?: string; firebase_token?: string; account?: unknown }>>;
 
 export const loginWithGoogleApi = (payload: {
   uid: string;
@@ -27,7 +27,7 @@ export const loginWithGoogleApi = (payload: {
       ...payload,
       kieu_dn: 'gg',
     },
-  }) as Promise<ApiEnvelope<{ access_token?: string; account?: unknown }>>;
+  }) as Promise<ApiEnvelope<{ access_token?: string; firebase_token?: string; account?: unknown }>>;
 
 export const checkAccountApi = () =>
   apiClient.get('/api/v1/check_account') as Promise<ApiEnvelope<{ access_token?: string } & Record<string, unknown>>>;

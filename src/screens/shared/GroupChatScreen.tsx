@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
 
 import { GroupChatPanel } from '../../components/GroupChatPanel';
+import { ScreenFrame } from '../../components/ScreenFrame';
 import { useAppSession } from '../../context/AppSessionContext';
 import { palette, spacing } from '../../theme/tokens';
 import { GroupRoom } from '../../types/app';
@@ -54,17 +55,21 @@ export function GroupChatScreen({ navigation, route }: Props) {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color={palette.brand} />
-      </View>
+      <ScreenFrame title="Nhóm chat" subtitle="Đang tải lịch sử tin nhắn" onBack={() => navigation.goBack()} scroll={false}>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={palette.brand} />
+        </View>
+      </ScreenFrame>
     );
   }
 
   if (!room) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.errorText}>{error || 'Không tìm thấy nhóm chat.'}</Text>
-      </View>
+      <ScreenFrame title="Nhóm chat" subtitle="Không mở được nội dung nhóm" onBack={() => navigation.goBack()} scroll={false}>
+        <View style={styles.centered}>
+          <Text style={styles.errorText}>{error || 'Không tìm thấy nhóm chat.'}</Text>
+        </View>
+      </ScreenFrame>
     );
   }
 
@@ -81,6 +86,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
           Alert.alert('Gửi tin nhắn thất bại', nextError instanceof Error ? nextError.message : 'Không gửi được tin nhắn.');
         }
       }}
+      onBack={() => navigation.goBack()}
       onOpenFiles={() => navigation.navigate('FileVault', { roomId: room.id })}
       onOpenInfo={() => navigation.navigate('GroupInfo', { roomId: room.id })}
     />

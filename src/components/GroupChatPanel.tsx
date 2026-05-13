@@ -11,6 +11,7 @@ interface GroupChatPanelProps {
   room: GroupRoom;
   currentUserName: string;
   onSend: (body: string) => void;
+  onBack?: () => void;
   onOpenInfo: () => void;
   onOpenFiles: () => void;
 }
@@ -19,6 +20,7 @@ export function GroupChatPanel({
   room,
   currentUserName,
   onSend,
+  onBack,
   onOpenInfo,
   onOpenFiles,
 }: GroupChatPanelProps) {
@@ -28,11 +30,18 @@ export function GroupChatPanel({
   return (
     <View style={styles.wrap}>
       <View style={styles.headerCard}>
-        <View style={styles.headerCopy}>
-          <Text style={styles.roomName}>{room.name}</Text>
-          <Text style={styles.roomMeta}>
-            {room.members.length} thành viên • {onlineCount} đang online
-          </Text>
+        <View style={styles.headerTop}>
+          {onBack ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Quay lại" style={styles.backButton} onPress={onBack}>
+              <Ionicons name="arrow-back" size={20} color={palette.ink} />
+            </Pressable>
+          ) : null}
+          <View style={styles.headerCopy}>
+            <Text style={styles.roomName}>{room.name}</Text>
+            <Text style={styles.roomMeta}>
+              {room.members.length} thành viên • {onlineCount} đang online
+            </Text>
+          </View>
         </View>
         <View style={styles.actions}>
           <Pressable
@@ -93,7 +102,23 @@ const styles = StyleSheet.create({
     borderColor: palette.border,
     gap: spacing.md,
   },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: palette.canvas,
+    borderWidth: 1,
+    borderColor: palette.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   headerCopy: {
+    flex: 1,
     gap: spacing.xs,
   },
   roomName: {

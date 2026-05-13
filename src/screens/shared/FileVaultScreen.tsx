@@ -11,7 +11,7 @@ import { palette, spacing } from '../../theme/tokens';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FileVault'>;
 
-export function FileVaultScreen({ route }: Props) {
+export function FileVaultScreen({ navigation, route }: Props) {
   const { rooms, loadRoomFiles } = useAppSession();
   const [files, setFiles] = useState<GroupFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +47,12 @@ export function FileVaultScreen({ route }: Props) {
   }, [loadRoomFiles, route.params.roomId]);
 
   return (
-    <ScreenFrame title="Kho file nhóm" subtitle={room?.name || 'Đang tải thông tin nhóm'} scroll={false}>
+    <ScreenFrame
+      title="Kho file nhóm"
+      subtitle={room?.name || 'Đang tải thông tin nhóm'}
+      onBack={() => navigation.goBack()}
+      scroll={false}
+    >
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         {loading ? <ActivityIndicator color={palette.brand} /> : null}
         {error ? <Text style={styles.errorText}>{error}</Text> : null}

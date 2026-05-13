@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AUTH_TOKEN_STORAGE_KEY } from '../config/appConfig';
 import {
@@ -25,6 +25,7 @@ import {
   updateChatGroupRoomInfoApi,
 } from '../services/mobileApi';
 import { setApiAccessToken } from '../services/apiClient';
+import { signInFirebaseWithBackendToken, signOutFirebase } from '../services/firebaseAuth';
 import {
   AppAccount,
   AppMessage,
@@ -118,6 +119,20 @@ const upsertConversation = (conversations: ConversationSummary[], conversation: 
   return next;
 };
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (error && typeof error === 'object') {
+    const envelope = error as { EM?: unknown; message?: unknown };
+    const serverMessage = String(envelope.EM || envelope.message || '').trim();
+    if (serverMessage) return serverMessage;
+  }
+
+  return fallback;
+};
+
 export function AppSessionProvider({ children }: { children: React.ReactNode }) {
   const [authState, setAuthState] = useState<AuthState>('loading');
   const [authError, setAuthError] = useState('');
@@ -125,9 +140,20 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [rooms, setRooms] = useState<GroupRoom[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const currentUserRef = useRef<AppAccount | null>(null);
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
 
   const clearSessionState = useCallback(async () => {
+    try {
+      await signOutFirebase();
+    } catch (error) {
+      console.warn('Đăng xuất Firebase thất bại:', error);
+    }
     setApiAccessToken('');
+    currentUserRef.current = null;
     setCurrentUser(null);
     setConversations([]);
     setRooms([]);
@@ -138,7 +164,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   const refreshRoomsForUser = useCallback(async (userOverride?: AppAccount | null) => {
-    const user = userOverride || currentUser;
+    const user = userOverride || currentUserRef.current;
     if (!user?.hasChatGroup) {
       setRooms([]);
       return;
@@ -155,12 +181,17 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
 
     setRooms(sortRooms(nextRooms));
     if (user.mode === 'customer' && !user.primaryRoomId && nextRooms[0]) {
-      setCurrentUser((prev) => (prev ? { ...prev, primaryRoomId: Number(nextRooms[0].id) } : prev));
+      setCurrentUser((prev) => {
+        if (!prev) return prev;
+        const nextUser = { ...prev, primaryRoomId: Number(nextRooms[0].id) };
+        currentUserRef.current = nextUser;
+        return nextUser;
+      });
     }
-  }, [currentUser]);
+  }, []);
 
   const refreshConversationsForUser = useCallback(async (userOverride?: AppAccount | null) => {
-    const user = userOverride || currentUser;
+    const user = userOverride || currentUserRef.current;
     if (!user?.canUseInbox) {
       setConversations([]);
       return;
@@ -175,10 +206,10 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       ? response.DT.conversations.map((item) => mapConversationSummary((item || {}) as Record<string, unknown>))
       : [];
     setConversations(nextConversations);
-  }, [currentUser]);
+  }, []);
 
   const refreshNotificationsForUser = useCallback(async (userOverride?: AppAccount | null) => {
-    const user = userOverride || currentUser;
+    const user = userOverride || currentUserRef.current;
     if (!user?.canUseNotifications) {
       setNotifications([]);
       return;
@@ -195,10 +226,10 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
         )
       : [];
     setNotifications(nextNotifications);
-  }, [currentUser]);
+  }, []);
 
   const ensureCustomerPrimaryRoomForUser = useCallback(async (userOverride?: AppAccount | null) => {
-    const user = userOverride || currentUser;
+    const user = userOverride || currentUserRef.current;
     if (!user || user.mode !== 'customer') {
       return null;
     }
@@ -210,11 +241,21 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
 
     const room = mapGroupRoom((response.DT.room || {}) as Record<string, unknown>);
     setRooms((prev) => upsertRoom(prev, room));
-    setCurrentUser((prev) => (prev ? { ...prev, primaryRoomId: Number(room.id) || null } : prev));
+    setCurrentUser((prev) => {
+      if (!prev) return prev;
+      const nextUser = { ...prev, primaryRoomId: Number(room.id) || null };
+      currentUserRef.current = nextUser;
+      return nextUser;
+    });
     return room;
-  }, [currentUser]);
+  }, []);
 
-  const hydrateAuthenticatedUser = useCallback(async (accountPayload: Record<string, unknown>, accessToken: string) => {
+  const hydrateAuthenticatedUser = useCallback(async (
+    accountPayload: Record<string, unknown>,
+    accessToken: string,
+    firebaseToken?: string,
+  ) => {
+    await signInFirebaseWithBackendToken(firebaseToken);
     setApiAccessToken(accessToken);
     await AsyncStorage.setItem(AUTH_TOKEN_STORAGE_KEY, accessToken);
 
@@ -236,15 +277,22 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       }
     }
 
+    currentUserRef.current = user;
     setCurrentUser(user);
     setAuthState('ready');
     setAuthError('');
 
-    await Promise.all([
+    const preloadResults = await Promise.allSettled([
       refreshRoomsForUser(user),
       refreshConversationsForUser(user),
       refreshNotificationsForUser(user),
     ]);
+    preloadResults.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        const scope = ['nhóm chat', 'hội thoại', 'thông báo'][index] || 'dữ liệu';
+        console.warn(`Không tải được ${scope} sau đăng nhập:`, result.reason);
+      }
+    });
 
     return user;
   }, [refreshConversationsForUser, refreshNotificationsForUser, refreshRoomsForUser]);
@@ -303,11 +351,12 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       await hydrateAuthenticatedUser(
         response.DT.account as Record<string, unknown>,
         String(response.DT.access_token || ''),
+        String(response.DT.firebase_token || ''),
       );
 
       return { ok: true };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Không đăng nhập được';
+      const message = getErrorMessage(error, 'Không đăng nhập được');
       setAuthError(message);
       return { ok: false, error: message };
     }
@@ -327,11 +376,12 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
         await hydrateAuthenticatedUser(
           response.DT.account as Record<string, unknown>,
           String(response.DT.access_token || ''),
+          String(response.DT.firebase_token || ''),
         );
 
         return { ok: true };
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Không đăng nhập Google được';
+        const message = getErrorMessage(error, 'Không đăng nhập Google được');
         setAuthError(message);
         return { ok: false, error: message };
       }

@@ -1,6 +1,7 @@
+import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ChatComposer } from '../../components/ChatComposer';
 import { MessageBubble } from '../../components/MessageBubble';
@@ -19,7 +20,7 @@ const aiHintByChannel = {
     'Tối đa 1 lượt auto. Kéo khách về invaihn.vn, tránh hỏi dồn nhiều câu trong lần đầu.',
 };
 
-export function ConversationScreen({ route }: Props) {
+export function ConversationScreen({ navigation, route }: Props) {
   const { currentUser, loadConversationDetail, sendConversationMessage, markConversationRead } = useAppSession();
   const [draft, setDraft] = useState('');
   const [conversation, setConversation] = useState<ConversationSummary | null>(null);
@@ -61,30 +62,48 @@ export function ConversationScreen({ route }: Props) {
     return null;
   }
 
+  const renderHeader = (title: string, subtitle?: string) => (
+    <View style={styles.header}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Quay lại" style={styles.backButton} onPress={() => navigation.goBack()}>
+        <Ionicons name="arrow-back" size={20} color={palette.surface} />
+      </Pressable>
+      <View style={styles.headerCopy}>
+        <Text style={styles.title}>{title}</Text>
+        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      </View>
+    </View>
+  );
+
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color={palette.brand} />
+      <View style={styles.safe}>
+        {renderHeader('Hội thoại', 'Đang tải lịch sử tin nhắn')}
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={palette.brand} />
+        </View>
       </View>
     );
   }
 
   if (!conversation) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.errorText}>{error || 'Không tìm thấy hội thoại.'}</Text>
+      <View style={styles.safe}>
+        {renderHeader('Hội thoại', 'Không mở được nội dung hội thoại')}
+        <View style={styles.centered}>
+          <Text style={styles.errorText}>{error || 'Không tìm thấy hội thoại.'}</Text>
+        </View>
       </View>
     );
   }
 
   return (
     <View style={styles.safe}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{conversation.title}</Text>
-        <Text style={styles.subtitle}>
-          {conversation.channel.toUpperCase()} • {conversation.aiStatus === 'ready' ? 'AI đang hỗ trợ' : 'Đang chờ nhân viên'}
-        </Text>
-      </View>
+      {renderHeader(
+        conversation.title,
+        `${conversation.channel.toUpperCase()} • ${
+          conversation.aiStatus === 'ready' ? 'AI đang hỗ trợ' : 'Đang chờ nhân viên'
+        }`,
+      )}
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.aiHintCard}>
@@ -153,12 +172,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xl,
     paddingBottom: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#243040',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCopy: {
+    flex: 1,
     gap: spacing.xs,
   },
   title: {
     color: palette.surface,
     fontSize: 22,
     fontWeight: '800',
+    flexShrink: 1,
   },
   subtitle: {
     color: '#c9d3e2',
