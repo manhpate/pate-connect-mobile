@@ -8,7 +8,9 @@ import { palette, radius, shadows, spacing } from '../../theme/tokens';
 export function NotificationsScreen() {
   const {
     notifications,
+    notificationPagination,
     currentUser,
+    loadMoreNotifications,
     markAllNotificationsRead,
     markNotificationRead,
     refreshNotifications,
@@ -49,16 +51,21 @@ export function NotificationsScreen() {
 
   return (
     <ScreenFrame
-      title="Thông báo"
-      subtitle="Push và badge theo đúng phạm vi quyền của người dùng trên mobile."
-      headerAction={
-        currentUser?.canUseNotifications ? (
-          <Text onPress={() => void markAllNotificationsRead()} style={styles.headerAction}>
+      showScrollTop
+      onEndReached={() => {
+        void loadMoreNotifications().catch((nextError) => {
+          console.warn('Không tải thêm được thông báo:', nextError);
+        });
+      }}
+    >
+      {currentUser?.canUseNotifications ? (
+        <View style={styles.actionRow}>
+          <Text onPress={() => void markAllNotificationsRead()} style={styles.actionText}>
             Đọc hết
           </Text>
-        ) : undefined
-      }
-    >
+        </View>
+      ) : null}
+
       {loading ? <ActivityIndicator color={palette.brand} /> : null}
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
       {visibleNotifications.map((item) => (
@@ -75,13 +82,20 @@ export function NotificationsScreen() {
           </View>
         </Pressable>
       ))}
+      {notificationPagination.loadingMore ? <ActivityIndicator color={palette.brand} /> : null}
+      {!loading && !notificationPagination.loadingMore && visibleNotifications.length === 0 ? (
+        <Text style={styles.emptyText}>Chưa có thông báo.</Text>
+      ) : null}
     </ScreenFrame>
   );
 }
 
 const styles = StyleSheet.create({
-  headerAction: {
-    color: palette.surface,
+  actionRow: {
+    alignItems: 'flex-end',
+  },
+  actionText: {
+    color: palette.brandDark,
     fontWeight: '800',
   },
   card: {
@@ -137,5 +151,10 @@ const styles = StyleSheet.create({
   errorText: {
     color: palette.danger,
     lineHeight: 20,
+  },
+  emptyText: {
+    color: palette.textSoft,
+    lineHeight: 22,
+    textAlign: 'center',
   },
 });

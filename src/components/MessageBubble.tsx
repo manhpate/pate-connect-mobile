@@ -1,8 +1,24 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { AppMessage } from '../types/app';
+import { AppMessage, MessageAttachment } from '../types/app';
 import { palette, radius, spacing } from '../theme/tokens';
+
+const getAttachmentUrl = (attachment: MessageAttachment) => attachment.previewUrl || attachment.url || '';
+
+const isImageAttachment = (attachment: MessageAttachment) => {
+  const type = String(attachment.type || '').toLowerCase();
+  const mimeType = String(attachment.mimeType || '').toLowerCase();
+  const url = getAttachmentUrl(attachment).toLowerCase();
+  return type === 'image' || mimeType.startsWith('image/') || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(url);
+};
+
+const openAttachment = (attachment: MessageAttachment) => {
+  const url = attachment.url || attachment.previewUrl || '';
+  if (url) {
+    void Linking.openURL(url);
+  }
+};
 
 export function MessageBubble({
   message,
@@ -37,7 +53,38 @@ export function MessageBubble({
         ]}
       >
         <Text style={styles.author}>{message.authorName}</Text>
-        <Text style={styles.body}>{message.body}</Text>
+        {message.body ? <Text style={styles.body}>{message.body}</Text> : null}
+        {message.attachments.length > 0 ? (
+          <View style={styles.attachments}>
+            {message.attachments.map((attachment, index) => {
+              const url = getAttachmentUrl(attachment);
+              if (url && isImageAttachment(attachment)) {
+                return (
+                  <Pressable
+                    key={attachment.id || `${url}-${index}`}
+                    accessibilityRole="imagebutton"
+                    accessibilityLabel={attachment.name || 'Mở ảnh'}
+                    onPress={() => openAttachment(attachment)}
+                  >
+                    <Image source={{ uri: url }} style={styles.attachmentImage} resizeMode="cover" />
+                  </Pressable>
+                );
+              }
+
+              return (
+                <Pressable
+                  key={attachment.id || `${attachment.name || 'file'}-${index}`}
+                  style={styles.fileAttachment}
+                  onPress={() => openAttachment(attachment)}
+                >
+                  <Text style={styles.fileAttachmentText} numberOfLines={1}>
+                    {attachment.name || 'Tệp đính kèm'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
       </View>
       <Text style={styles.timeStamp}>{message.sentAt}</Text>
     </View>
@@ -80,6 +127,27 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     color: palette.ink,
+  },
+  attachments: {
+    gap: spacing.xs,
+  },
+  attachmentImage: {
+    width: 220,
+    height: 160,
+    maxWidth: '100%',
+    borderRadius: radius.sm,
+    backgroundColor: palette.border,
+  },
+  fileAttachment: {
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.canvas,
+    padding: spacing.sm,
+  },
+  fileAttachmentText: {
+    color: palette.brandDark,
+    fontWeight: '800',
   },
   timeStamp: {
     fontSize: 12,

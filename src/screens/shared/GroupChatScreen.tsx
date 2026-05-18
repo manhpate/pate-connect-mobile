@@ -1,6 +1,7 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GroupChatPanel } from '../../components/GroupChatPanel';
 import { ScreenFrame } from '../../components/ScreenFrame';
@@ -12,16 +13,46 @@ import { RootStackParamList } from '../../types/app';
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupChat'>;
 
 export function GroupChatScreen({ navigation, route }: Props) {
-  const { currentUser, loadRoomDetail, sendRoomMessage, markRoomRead } = useAppSession();
-  const [room, setRoom] = useState<GroupRoom | null>(null);
-  const [loading, setLoading] = useState(true);
+  const {
+    currentUser,
+    rooms,
+    loadRoomDetail,
+    sendRoomMessage,
+    sendRoomImage,
+    markRoomRead,
+  } = useAppSession();
+  const roomSnapshot = useMemo(
+    () => rooms.find((item) => item.id === route.params.roomId) || null,
+    [rooms, route.params.roomId],
+  );
+  const [room, setRoom] = useState<GroupRoom | null>(roomSnapshot);
+  const [loading, setLoading] = useState(!roomSnapshot);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    setRoom((prev) => {
+      if (prev?.id === route.params.roomId && roomSnapshot) {
+        return {
+          ...prev,
+          ...roomSnapshot,
+          files: prev.files.length ? prev.files : roomSnapshot.files,
+          members: roomSnapshot.members.length ? roomSnapshot.members : prev.members,
+          messages: prev.messages.length ? prev.messages : roomSnapshot.messages,
+          canManageMembers: prev.canManageMembers || roomSnapshot.canManageMembers,
+          canEditRoom: prev.canEditRoom || roomSnapshot.canEditRoom,
+          canRemoveMembers: prev.canRemoveMembers || roomSnapshot.canRemoveMembers,
+        };
+      }
+      if (prev?.id === route.params.roomId) return prev;
+      return roomSnapshot;
+    });
+  }, [roomSnapshot, route.params.roomId]);
 
   useEffect(() => {
     let cancelled = false;
 
     const hydrate = async () => {
-      setLoading(true);
+      setLoading(!roomSnapshot);
       setError('');
       try {
         const detail = await loadRoomDetail(route.params.roomId);
@@ -53,9 +84,9 @@ export function GroupChatScreen({ navigation, route }: Props) {
     return null;
   }
 
-  if (loading) {
+  if (loading && !room) {
     return (
-      <ScreenFrame title="Nhóm chat" subtitle="Đang tải lịch sử tin nhắn" onBack={() => navigation.goBack()} scroll={false}>
+      <ScreenFrame scroll={false}>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={palette.brand} />
         </View>
@@ -65,8 +96,16 @@ export function GroupChatScreen({ navigation, route }: Props) {
 
   if (!room) {
     return (
-      <ScreenFrame title="Nhóm chat" subtitle="Không mở được nội dung nhóm" onBack={() => navigation.goBack()} scroll={false}>
-        <View style={styles.centered}>
+      <ScreenFrame scroll={false}>
+        <View style={styles.errorWrap}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Quay lại"
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={20} color={palette.ink} />
+          </Pressable>
           <Text style={styles.errorText}>{error || 'Không tìm thấy nhóm chat.'}</Text>
         </View>
       </ScreenFrame>
@@ -77,14 +116,12 @@ export function GroupChatScreen({ navigation, route }: Props) {
     <GroupChatPanel
       room={room}
       currentUserName={currentUser.username}
-      onSend={async (body) => {
-        try {
-          const message = await sendRoomMessage(room.id, body);
-          if (!message) return;
-          setRoom((prev) => (prev ? { ...prev, unread: 0, messages: [...prev.messages, message] } : prev));
-        } catch (nextError) {
-          Alert.alert('Gửi tin nhắn thất bại', nextError instanceof Error ? nextError.message : 'Không gửi được tin nhắn.');
-        }
+      onSend={async (body, image) => {
+        const message = image
+          ? await sendRoomImage(room.id, body, image)
+          : await sendRoomMessage(room.id, body);
+        if (!message) return;
+        setRoom((prev) => (prev ? { ...prev, unread: 0, messages: [...prev.messages, message] } : prev));
       }}
       onBack={() => navigation.goBack()}
       onOpenFiles={() => navigation.navigate('FileVault', { roomId: room.id })}
@@ -104,5 +141,22 @@ const styles = StyleSheet.create({
     color: palette.danger,
     textAlign: 'center',
     lineHeight: 22,
+  },
+  errorWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+  },
+  backButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: palette.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

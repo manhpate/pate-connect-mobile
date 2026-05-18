@@ -106,19 +106,9 @@ export function WelcomeScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.hero}>
-        <View style={styles.logoPill}>
-          <Text style={styles.logoText}>PATE</Text>
-        </View>
-        <Text style={styles.title}>Pate Connect</Text>
-        <Text style={styles.subtitle}>
-          App mobile dùng trực tiếp dữ liệu thật từ `app.invaihn.vn` cho chat nhóm, hội thoại đa kênh và thông báo.
-        </Text>
-      </View>
-
       <View style={styles.body}>
         <View style={styles.formCard}>
-          <Text style={styles.sectionTitle}>Đăng nhập tài khoản app</Text>
+          <Text style={styles.sectionTitle}>Đăng nhập Chat nhóm doanh nghiệp</Text>
           <TextInput
             value={tenDangNhap}
             onChangeText={setTenDangNhap}
@@ -190,13 +180,6 @@ export function WelcomeScreen() {
           {authError ? <Text style={styles.errorText}>{authError}</Text> : null}
           {googleErrorText ? <Text style={styles.errorText}>{googleErrorText}</Text> : null}
         </View>
-
-        <View style={styles.noteCard}>
-          <Text style={styles.noteTitle}>Lưu ý hiện tại</Text>
-          <Text style={styles.noteText}>
-            App mobile đã nối đăng nhập thật bằng tài khoản app và đã bật luồng Google sign-in cho Firebase project hiện tại. Nếu Android production cần ổn định hoàn toàn, bạn nên bổ sung SHA-1/SHA-256 cho app Android trong Firebase để sinh Android OAuth client riêng.
-          </Text>
-        </View>
       </View>
     </SafeAreaView>
   );
@@ -207,36 +190,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: palette.canvas,
   },
-  hero: {
-    backgroundColor: palette.dark,
-    padding: spacing.xl,
-    borderBottomLeftRadius: 36,
-    borderBottomRightRadius: 36,
-    gap: spacing.md,
-  },
-  logoPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: palette.surface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-  },
-  logoText: {
-    color: palette.brandDark,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  title: {
-    fontSize: 34,
-    fontWeight: '900',
-    color: palette.surface,
-  },
-  subtitle: {
-    color: '#d3d9e4',
-    lineHeight: 22,
-    fontSize: 15,
-  },
   body: {
+    flex: 1,
+    justifyContent: 'center',
     padding: spacing.lg,
     gap: spacing.md,
   },
@@ -298,21 +254,5 @@ const styles = StyleSheet.create({
   errorText: {
     color: palette.danger,
     lineHeight: 20,
-  },
-  noteCard: {
-    backgroundColor: palette.accentSoft,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    gap: spacing.sm,
-    borderWidth: 1,
-    borderColor: '#f4df95',
-  },
-  noteTitle: {
-    fontWeight: '800',
-    color: palette.ink,
-  },
-  noteText: {
-    color: palette.ink,
-    lineHeight: 22,
   },
 });

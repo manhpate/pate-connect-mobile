@@ -50,10 +50,56 @@ const parseJson = <T>(value: unknown, fallback: T): T => {
   }
 };
 
-const mapChannel = (value: string): Channel => {
+const mapChannel = (value: string, label = ''): Channel => {
+  if (label.toLowerCase().includes('instagram')) return 'instagram';
   if (value === 'zalo_oa') return 'zalo';
   if (value === 'facebook_messenger') return 'facebook';
   return 'website';
+};
+
+const removeChannelPrefixFromName = ({
+  name,
+  customerId,
+  channel,
+  channelLabel,
+}: {
+  name: string;
+  customerId: string;
+  channel: Channel;
+  channelLabel: string;
+}) => {
+  const cleanName = normalizeString(name);
+  const id = normalizeString(customerId);
+  if (!cleanName) return '';
+
+  const genericNames = [
+    'facebook',
+    'facebook messenger',
+    'zalo',
+    'zalo oa',
+    'instagram',
+    'instagram direct',
+    'website',
+    'khách website',
+    channelLabel,
+  ]
+    .map((item) => normalizeString(item).toLowerCase())
+    .filter(Boolean);
+
+  const lowerName = cleanName.toLowerCase();
+  if (id && lowerName === id.toLowerCase()) return '';
+
+  for (const genericName of genericNames) {
+    if (lowerName === genericName) return '';
+    if (id && lowerName === `${genericName} ${id.toLowerCase()}`) return '';
+  }
+
+  if (channel === 'facebook' || channel === 'instagram' || channel === 'zalo') {
+    const idPattern = channel === 'zalo' ? /^zalo\s+\d+$/i : /^(facebook|instagram)\s+\d+$/i;
+    if (idPattern.test(cleanName)) return '';
+  }
+
+  return cleanName;
 };
 
 const mapAiStatus = (item: Record<string, unknown>) => {
@@ -95,8 +141,9 @@ export const mapAccount = (
     : [];
   const groupName = normalizeString(group.ten_nhom, 'Người dùng');
   const mode: UserMode = groupName === 'Nhóm Khách Hàng' ? 'customer' : 'internal';
+  const belongsToPateCompany = Boolean(raw.thuoc_cong_ty_pate);
   const hasChatGroup = features.includes('CHAT_GROUP');
-  const canUseInbox = features.includes('CHAT_INBOX') || INTERNAL_GROUPS.has(groupName);
+  const canUseInbox = belongsToPateCompany && (features.includes('CHAT_INBOX') || INTERNAL_GROUPS.has(groupName));
   const canModerateGroups = groupName === 'Nhóm Admin' || features.includes('QUYEN_ADMIN');
 
   return {
@@ -109,28 +156,36 @@ export const mapAccount = (
     permissions: features,
     groupId: Number(group.id || 0) || null,
     groupName,
+    belongsToPateCompany,
     primaryRoomId,
     canModerateGroups,
     canUseInbox,
-    canUseNotifications: Boolean(raw.co_quyen_thong_bao),
+    canUseNotifications: belongsToPateCompany && Boolean(raw.co_quyen_thong_bao),
     hasChatGroup,
   };
 };
 
 export const mapConversationSummary = (item: Record<string, unknown>): ConversationSummary => {
   const rawChannel = normalizeString(item.kenh);
-  const channel = mapChannel(rawChannel);
-  const customerName = normalizeString(item.customer_name, 'Khách hàng');
+  const channelLabel = normalizeString(item.kenh_label);
+  const channel = mapChannel(rawChannel, channelLabel);
+  const customerName = removeChannelPrefixFromName({
+    name: normalizeString(item.customer_name),
+    customerId: normalizeString(item.platform_customer_id),
+    channel,
+    channelLabel,
+  });
   const preview =
     normalizeString(item.last_message_text) ||
     (normalizeString(item.last_message_type) === 'attachment' ? '[Đã gửi tệp/ảnh]' : 'Chưa có nội dung');
+  const titleLabel = channelLabel || rawChannel || 'Hội thoại';
 
   return {
     id: normalizeString(item.id),
     channel,
     rawChannel,
     customerName,
-    title: `${item.kenh_label ? normalizeString(item.kenh_label) : rawChannel} | ${customerName}`,
+    title: customerName ? `${titleLabel} | ${customerName}` : titleLabel,
     preview,
     lastMessageAt: formatDateTime(item.last_message_at as string | null, 'Mới đây'),
     lastMessageAtRaw: normalizeString(item.last_message_at) || null,
@@ -138,6 +193,8 @@ export const mapConversationSummary = (item: Record<string, unknown>): Conversat
     aiStatus: mapAiStatus(item),
     statusLabel: normalizeString(item.status, 'moi'),
     canReply: Boolean(item.can_reply),
+    canSendImages: Boolean(item.can_send_images),
+    imageDisabledReason: normalizeString(item.send_image_disabled_reason),
   };
 };
 

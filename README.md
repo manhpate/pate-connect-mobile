@@ -34,6 +34,24 @@ npm run web
 npm run typecheck
 ```
 
+## Cấu hình gọi thoại Agora
+
+Mobile không lưu RTC token cố định. Khi bấm gọi, app gọi backend:
+
+```text
+POST /api/chat-groups/rooms/:id/rtc-token
+```
+
+Backend cần cấu hình:
+
+```bash
+AGORA_APP_ID=your_agora_app_id
+AGORA_APP_CERTIFICATE=your_agora_app_certificate
+AGORA_RTC_TOKEN_TTL_SECONDS=3600
+```
+
+Tính năng gọi thoại dùng `react-native-agora`, nên cần build app điện thoại bằng native build/custom dev build. Web preview chỉ hiển thị UI và channel test, cuộc gọi thật chạy trên app điện thoại.
+
 ## Cấu trúc
 
 - `App.tsx`: root app

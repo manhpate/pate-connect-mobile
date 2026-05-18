@@ -7,7 +7,8 @@ import { ChatComposer } from '../../components/ChatComposer';
 import { MessageBubble } from '../../components/MessageBubble';
 import { useAppSession } from '../../context/AppSessionContext';
 import { palette, radius, spacing } from '../../theme/tokens';
-import { ConversationSummary, RootStackParamList } from '../../types/app';
+import { ConversationSummary, RootStackParamList, UploadImageFile } from '../../types/app';
+import { pickChatImage } from '../../utils/chatImagePicker';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Conversation'>;
 
@@ -18,11 +19,21 @@ const aiHintByChannel = {
     'Trả lời ngắn, xác nhận đã tiếp nhận rồi kéo khách sang invaihn.vn để gửi file và làm việc thuận tiện hơn.',
   facebook:
     'Tối đa 1 lượt auto. Kéo khách về invaihn.vn, tránh hỏi dồn nhiều câu trong lần đầu.',
+  instagram:
+    'Trả lời ngắn như Facebook, ưu tiên kéo khách về invaihn.vn để gửi file và lưu thông tin làm việc.',
 };
 
 export function ConversationScreen({ navigation, route }: Props) {
-  const { currentUser, loadConversationDetail, sendConversationMessage, markConversationRead } = useAppSession();
+  const {
+    currentUser,
+    loadConversationDetail,
+    sendConversationMessage,
+    sendConversationImage,
+    markConversationRead,
+  } = useAppSession();
   const [draft, setDraft] = useState('');
+  const [selectedImage, setSelectedImage] = useState<UploadImageFile | null>(null);
+  const [sending, setSending] = useState(false);
   const [conversation, setConversation] = useState<ConversationSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -74,6 +85,21 @@ export function ConversationScreen({ navigation, route }: Props) {
     </View>
   );
 
+  const handlePickImage = async () => {
+    try {
+      const result = await pickChatImage();
+      if (result.error) {
+        Alert.alert('Không chọn được ảnh', result.error);
+        return;
+      }
+      if (result.image) {
+        setSelectedImage(result.image);
+      }
+    } catch (nextError) {
+      Alert.alert('Không chọn được ảnh', nextError instanceof Error ? nextError.message : 'Không mở được thư viện ảnh.');
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.safe}>
@@ -120,31 +146,46 @@ export function ConversationScreen({ navigation, route }: Props) {
           value={draft}
           onChangeText={setDraft}
           onSend={async () => {
-            if (!draft.trim()) {
+            if (!draft.trim() && !selectedImage) {
               return;
             }
+            setSending(true);
             try {
-              const message = await sendConversationMessage(conversation.id, draft);
-              if (!message) return;
+              const messages = selectedImage
+                ? await sendConversationImage(conversation.id, draft, selectedImage)
+                : await sendConversationMessage(conversation.id, draft).then((message) => (message ? [message] : []));
+              if (messages.length === 0) return;
+              const lastMessage = messages[messages.length - 1];
               setConversation((prev) =>
                 prev
                   ? {
                       ...prev,
-                      preview: message.body,
-                      lastMessageAt: message.sentAt,
+                      preview: lastMessage.body,
+                      lastMessageAt: lastMessage.sentAt,
                       unread: 0,
-                      messages: [...(prev.messages || []), message],
+                      messages: [...(prev.messages || []), ...messages],
                     }
                   : prev,
               );
               setDraft('');
+              setSelectedImage(null);
             } catch (nextError) {
               Alert.alert(
                 'Gửi phản hồi thất bại',
                 nextError instanceof Error ? nextError.message : 'Không gửi được phản hồi.',
               );
+            } finally {
+              setSending(false);
             }
           }}
+          onPickImage={
+            conversation.canSendImages
+              ? handlePickImage
+              : () => Alert.alert('Chưa hỗ trợ gửi ảnh', conversation.imageDisabledReason || 'Hội thoại này chưa hỗ trợ gửi ảnh.')
+          }
+          selectedImage={selectedImage}
+          onRemoveImage={() => setSelectedImage(null)}
+          sending={sending}
       />
     </View>
   );

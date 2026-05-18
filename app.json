@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Pate Connect",
+    "name": "Chat nhóm doanh nghiệp",
     "slug": "pate-connect-mobile",
     "scheme": "com.pate.connect",
     "version": "1.0.0",
@@ -16,7 +16,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pate.connect",
-      "googleServicesFile": "./GoogleService-Info.plist"
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Ung dung can micro de goi thoai trong nhom chat."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -26,7 +29,12 @@
       "package": "com.pate.connect",
       "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "INTERNET",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

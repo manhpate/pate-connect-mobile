@@ -1,34 +1,44 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GroupRoom } from '../types/app';
 import { palette, radius, spacing } from '../theme/tokens';
 import { FileRow } from './FileRow';
 
-export function FileVaultPanel({ room }: { room: GroupRoom }) {
+export function FileVaultPanel({
+  room,
+  uploading = false,
+  onBack,
+  onUpload,
+}: {
+  room: GroupRoom;
+  uploading?: boolean;
+  onBack?: () => void;
+  onUpload?: () => void;
+}) {
   return (
     <View style={styles.wrap}>
-      <View style={styles.hero}>
-        <View style={styles.heroCopy}>
-          <Text style={styles.title}>Kho file của nhóm</Text>
-          <Text style={styles.subtitle}>
-            File thiết kế, ảnh mẫu và tài liệu chốt đơn của nhóm này sẽ tập trung tại một nơi.
-          </Text>
+      {onBack || onUpload ? (
+        <View style={styles.toolbar}>
+          {onBack ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Quay lại" style={styles.backButton} onPress={onBack}>
+              <Ionicons name="arrow-back" size={20} color={palette.ink} />
+            </Pressable>
+          ) : null}
+          <View style={styles.toolbarSpacer} />
+          {onUpload ? (
+            <Pressable
+              style={[styles.uploadButton, uploading && styles.uploadButtonDisabled]}
+              disabled={uploading}
+              onPress={onUpload}
+            >
+              <Ionicons name={uploading ? 'hourglass-outline' : 'add-circle-outline'} size={18} color={palette.surface} />
+              <Text style={styles.uploadButtonText}>{uploading ? 'Đang upload' : 'Upload'}</Text>
+            </Pressable>
+          ) : null}
         </View>
-        <Pressable
-          style={styles.uploadButton}
-          onPress={() =>
-            Alert.alert(
-              'Upload file',
-              'Danh sách file hiện đã lấy từ dữ liệu thật của nhóm. Nút upload file native sẽ được nối ở bước tiếp theo.',
-            )
-          }
-        >
-          <Ionicons name="add-circle-outline" size={18} color={palette.surface} />
-          <Text style={styles.uploadButtonText}>Upload</Text>
-        </Pressable>
-      </View>
+      ) : null}
 
       <View style={styles.list}>
         {room.files.map((file) => (
@@ -49,40 +59,45 @@ export function FileVaultPanel({ room }: { room: GroupRoom }) {
 
 const styles = StyleSheet.create({
   wrap: {
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
     gap: spacing.md,
   },
-  hero: {
-    backgroundColor: palette.dark,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  heroCopy: {
+  toolbar: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: palette.surface,
+  backButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: palette.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  subtitle: {
-    color: '#d8dfeb',
-    lineHeight: 20,
+  toolbarSpacer: {
+    flex: 1,
   },
   uploadButton: {
-    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
     backgroundColor: palette.sky,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.md,
-    minHeight: 44,
+    minHeight: 40,
   },
   uploadButtonText: {
     color: palette.surface,
     fontWeight: '800',
+  },
+  uploadButtonDisabled: {
+    opacity: 0.65,
   },
   list: {
     gap: spacing.md,

@@ -9,12 +9,14 @@ const channelLabel = {
   website: 'Website',
   zalo: 'Zalo OA',
   facebook: 'Facebook',
+  instagram: 'Instagram',
 };
 
 const channelColor = {
   website: palette.brand,
   zalo: '#2563eb',
   facebook: '#3556d1',
+  instagram: '#c13584',
 };
 
 export function ConversationRow({
@@ -31,20 +33,26 @@ export function ConversationRow({
       </View>
       <View style={styles.copy}>
         <View style={styles.titleRow}>
-          <Text style={styles.title}>{item.customerName}</Text>
-          <Text style={styles.time}>{item.lastMessageAt}</Text>
-        </View>
-        <View style={styles.metaRow}>
-          <View style={[styles.channelPill, { backgroundColor: `${channelColor[item.channel]}18` }]}>
-            <Text style={[styles.channelText, { color: channelColor[item.channel] }]}>
-              {channelLabel[item.channel]}
-            </Text>
-          </View>
-          {item.unread > 0 ? (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{item.unread}</Text>
+          <View style={styles.titleMain}>
+            <View style={[styles.channelPill, { backgroundColor: `${channelColor[item.channel]}18` }]}>
+              <Text style={[styles.channelText, { color: channelColor[item.channel] }]}>
+                {channelLabel[item.channel]}
+              </Text>
             </View>
-          ) : null}
+            {item.customerName ? (
+              <Text style={styles.title} numberOfLines={1}>
+                {item.customerName}
+              </Text>
+            ) : null}
+          </View>
+          <View style={styles.trailingMeta}>
+            {item.unread > 0 ? (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{item.unread}</Text>
+              </View>
+            ) : null}
+            <Text style={styles.time}>{item.lastMessageAt}</Text>
+          </View>
         </View>
         <Text style={styles.preview} numberOfLines={2}>
           {item.preview}
@@ -84,20 +92,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
+  titleMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minWidth: 0,
+  },
   title: {
     flex: 1,
     fontSize: 16,
     fontWeight: '700',
     color: palette.ink,
   },
+  trailingMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
   time: {
     color: palette.textMuted,
     fontSize: 12,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
   },
   channelPill: {
     paddingHorizontal: spacing.sm,

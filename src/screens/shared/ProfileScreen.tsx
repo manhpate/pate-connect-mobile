@@ -13,15 +13,13 @@ export function ProfileScreen() {
   }
 
   return (
-    <ScreenFrame
-      title="Tài khoản"
-      subtitle="Phân quyền vẫn lấy từ backend. Mobile chỉ hiển thị theo đúng phạm vi user được cấp."
-      headerAction={
+    <ScreenFrame>
+      <View style={styles.actionRow}>
         <Text onPress={signOut} style={styles.logout}>
           Đăng xuất
         </Text>
-      }
-    >
+      </View>
+
       <View style={styles.profileCard}>
         <Text style={styles.name}>{currentUser.username}</Text>
         <Text style={styles.meta}>
@@ -35,21 +33,16 @@ export function ProfileScreen() {
           ))}
         </View>
       </View>
-
-      <View style={styles.noteCard}>
-        <Text style={styles.noteTitle}>Hướng mở rộng sau v1</Text>
-        <Text style={styles.noteText}>
-          Nội bộ sẽ mở rộng dần theo module đáng lên mobile. Khách hàng tiếp tục chỉ tập trung vào chat nhóm,
-          file và thông báo.
-        </Text>
-      </View>
     </ScreenFrame>
   );
 }
 
 const styles = StyleSheet.create({
+  actionRow: {
+    alignItems: 'flex-end',
+  },
   logout: {
-    color: palette.surface,
+    color: palette.brandDark,
     fontWeight: '800',
   },
   profileCard: {
@@ -86,22 +79,5 @@ const styles = StyleSheet.create({
     color: palette.ink,
     fontSize: 12,
     fontWeight: '800',
-  },
-  noteCard: {
-    backgroundColor: palette.brandSoft,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    gap: spacing.sm,
-    borderWidth: 1,
-    borderColor: '#bceadf',
-  },
-  noteTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: palette.ink,
-  },
-  noteText: {
-    lineHeight: 22,
-    color: palette.ink,
   },
 });

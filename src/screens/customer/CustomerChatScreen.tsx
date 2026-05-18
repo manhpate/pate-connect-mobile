@@ -1,7 +1,7 @@
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { GroupChatPanel } from '../../components/GroupChatPanel';
 import { useAppSession } from '../../context/AppSessionContext';
@@ -11,7 +11,7 @@ import { RootStackParamList } from '../../types/app';
 
 export function CustomerChatScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { currentUser, rooms, ensureCustomerPrimaryRoom, loadRoomDetail, sendRoomMessage, markRoomRead } = useAppSession();
+  const { currentUser, rooms, ensureCustomerPrimaryRoom, loadRoomDetail, sendRoomMessage, sendRoomImage, markRoomRead } = useAppSession();
   const [room, setRoom] = useState<GroupRoom | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -88,14 +88,12 @@ export function CustomerChatScreen() {
     <GroupChatPanel
       room={room}
       currentUserName={currentUser.username}
-      onSend={async (body) => {
-        try {
-          const message = await sendRoomMessage(room.id, body);
-          if (!message) return;
-          setRoom((prev) => (prev ? { ...prev, unread: 0, messages: [...prev.messages, message] } : prev));
-        } catch (nextError) {
-          Alert.alert('Gửi tin nhắn thất bại', nextError instanceof Error ? nextError.message : 'Không gửi được tin nhắn.');
-        }
+      onSend={async (body, image) => {
+        const message = image
+          ? await sendRoomImage(room.id, body, image)
+          : await sendRoomMessage(room.id, body);
+        if (!message) return;
+        setRoom((prev) => (prev ? { ...prev, unread: 0, messages: [...prev.messages, message] } : prev));
       }}
       onOpenFiles={() => navigation.navigate('FileVault', { roomId: room.id })}
       onOpenInfo={() => navigation.navigate('GroupInfo', { roomId: room.id })}

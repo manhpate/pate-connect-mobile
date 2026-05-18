@@ -1,12 +1,12 @@
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 
 import { ConversationRow } from '../../components/ConversationRow';
 import { ScreenFrame } from '../../components/ScreenFrame';
 import { useAppSession } from '../../context/AppSessionContext';
-import { palette, radius, shadows, spacing } from '../../theme/tokens';
+import { palette, radius, spacing } from '../../theme/tokens';
 import { Channel, RootStackParamList } from '../../types/app';
 
 const filters: Array<{ key: 'all' | Channel; label: string }> = [
@@ -14,13 +14,23 @@ const filters: Array<{ key: 'all' | Channel; label: string }> = [
   { key: 'website', label: 'Website' },
   { key: 'zalo', label: 'Zalo' },
   { key: 'facebook', label: 'Facebook' },
+  { key: 'instagram', label: 'Instagram' },
 ];
 
 export function InternalInboxScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { conversations, markConversationRead, refreshConversations } = useAppSession();
+  const {
+    conversations,
+    conversationPagination,
+    loadConversationsUntilChannel,
+    loadMoreConversations,
+    markConversationRead,
+    refreshConversations,
+  } = useAppSession();
   const [activeFilter, setActiveFilter] = useState<'all' | Channel>('all');
   const [loading, setLoading] = useState(false);
+  const [filterLoading, setFilterLoading] = useState(false);
+  const [autoSearchDoneByFilter, setAutoSearchDoneByFilter] = useState<Partial<Record<Channel, boolean>>>({});
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -30,6 +40,9 @@ export function InternalInboxScreen() {
       setError('');
       try {
         await refreshConversations();
+        if (!cancelled) {
+          setAutoSearchDoneByFilter({});
+        }
       } catch (nextError) {
         if (!cancelled) {
           setError(nextError instanceof Error ? nextError.message : 'Không tải được hội thoại');
@@ -48,11 +61,6 @@ export function InternalInboxScreen() {
     };
   }, [refreshConversations]);
 
-  const unreadTotal = useMemo(
-    () => conversations.reduce((sum, conversation) => sum + conversation.unread, 0),
-    [conversations],
-  );
-
   const filteredConversations = useMemo(
     () =>
       activeFilter === 'all'
@@ -61,44 +69,85 @@ export function InternalInboxScreen() {
     [activeFilter, conversations],
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    if (
+      activeFilter !== 'all' &&
+      filteredConversations.length === 0 &&
+      conversationPagination.hasMore &&
+      !conversationPagination.loadingMore &&
+      !autoSearchDoneByFilter[activeFilter]
+    ) {
+      setAutoSearchDoneByFilter((prev) => ({ ...prev, [activeFilter]: true }));
+      setFilterLoading(true);
+      void loadConversationsUntilChannel(activeFilter)
+        .catch((nextError) => {
+          console.warn('Không tải thêm được hội thoại theo kênh:', nextError);
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setFilterLoading(false);
+          }
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeFilter,
+    autoSearchDoneByFilter,
+    conversationPagination.hasMore,
+    conversationPagination.loadingMore,
+    filteredConversations.length,
+    loadConversationsUntilChannel,
+  ]);
+
+  const renderFilters = (compact = false) => (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={[styles.filterRow, compact && styles.floatingFilterRow]}
+    >
+      {filters.map((filter) => (
+        <Pressable
+          key={filter.key}
+          style={[
+            styles.filterChip,
+            compact && styles.filterChipFloating,
+            activeFilter === filter.key ? styles.filterChipActive : styles.filterChipIdle,
+          ]}
+          onPress={() => {
+            setError('');
+            setActiveFilter(filter.key);
+          }}
+        >
+          <Text
+            style={[
+              styles.filterText,
+              compact && styles.filterTextFloating,
+              activeFilter === filter.key ? styles.filterTextActive : styles.filterTextIdle,
+            ]}
+          >
+            {filter.label}
+          </Text>
+        </Pressable>
+      ))}
+    </ScrollView>
+  );
+
   return (
     <ScreenFrame
-      title="Hội thoại"
-      subtitle="Inbox đa kênh cho đội nội bộ. Đây là phạm vi mobile v1 được ưu tiên trước website đầy đủ."
+      showScrollTop
+      floatingButtonPosition="right"
+      floatingAccessory={() => renderFilters(true)}
+      onEndReached={() => {
+        void loadMoreConversations().catch((nextError) => {
+          console.warn('Không tải thêm được hội thoại:', nextError);
+        });
+      }}
     >
-      <View style={styles.metricsCard}>
-        <View>
-          <Text style={styles.metricsTitle}>Lead mới cần xử lý</Text>
-          <Text style={styles.metricsValue}>{unreadTotal}</Text>
-        </View>
-        <View style={styles.metricsDivider} />
-        <View>
-          <Text style={styles.metricsTitle}>Kênh đang theo dõi</Text>
-          <Text style={styles.metricsMeta}>Website • Zalo OA • Facebook Messenger</Text>
-        </View>
-      </View>
-
-      <View style={styles.filterRow}>
-        {filters.map((filter) => (
-          <Pressable
-            key={filter.key}
-            style={[
-              styles.filterChip,
-              activeFilter === filter.key ? styles.filterChipActive : styles.filterChipIdle,
-            ]}
-            onPress={() => setActiveFilter(filter.key)}
-          >
-            <Text
-              style={[
-                styles.filterText,
-                activeFilter === filter.key ? styles.filterTextActive : styles.filterTextIdle,
-              ]}
-            >
-              {filter.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      {renderFilters()}
 
       {loading ? <ActivityIndicator color={palette.brand} /> : null}
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -113,50 +162,26 @@ export function InternalInboxScreen() {
           }}
         />
       ))}
+      {conversationPagination.loadingMore || filterLoading ? <ActivityIndicator color={palette.brand} /> : null}
+      {!loading && !conversationPagination.loadingMore && !filterLoading && filteredConversations.length === 0 ? (
+        <Text style={styles.emptyText}>Chưa có hội thoại trong mục này.</Text>
+      ) : null}
     </ScreenFrame>
   );
 }
 
 const styles = StyleSheet.create({
-  metricsCard: {
-    backgroundColor: palette.dark,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    ...shadows.card,
-  },
-  metricsTitle: {
-    color: '#aab7cd',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  metricsValue: {
-    color: palette.surface,
-    fontSize: 28,
-    fontWeight: '900',
-    marginTop: spacing.xs,
-  },
-  metricsMeta: {
-    color: palette.surface,
-    marginTop: spacing.xs,
-    lineHeight: 20,
-    maxWidth: 180,
-  },
-  metricsDivider: {
-    width: 1,
-    alignSelf: 'stretch',
-    backgroundColor: '#2d3645',
-  },
   filterRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: spacing.xs,
+    paddingRight: spacing.lg,
+  },
+  floatingFilterRow: {
+    paddingRight: 0,
   },
   filterChip: {
-    minHeight: 40,
-    paddingHorizontal: spacing.md,
+    minHeight: 34,
+    paddingHorizontal: 12,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
@@ -169,8 +194,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.border,
   },
+  filterChipFloating: {
+    minHeight: 30,
+    paddingHorizontal: 10,
+  },
   filterText: {
     fontWeight: '800',
+    fontSize: 13,
+  },
+  filterTextFloating: {
+    fontSize: 12,
   },
   filterTextActive: {
     color: palette.surface,
@@ -181,5 +214,10 @@ const styles = StyleSheet.create({
   errorText: {
     color: palette.danger,
     lineHeight: 20,
+  },
+  emptyText: {
+    color: palette.textSoft,
+    lineHeight: 22,
+    textAlign: 'center',
   },
 });

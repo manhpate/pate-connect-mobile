@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text } from 'react-native';
 
 import { FileVaultPanel } from '../../components/FileVaultPanel';
 import { ScreenFrame } from '../../components/ScreenFrame';
@@ -59,11 +59,7 @@ export function CustomerFilesScreen() {
   }, [currentUser?.id, ensureCustomerPrimaryRoom, loadRoomFiles, roomId]);
 
   return (
-    <ScreenFrame
-      title="Kho file nhóm"
-      subtitle={room?.name || 'Khách hàng chỉ nhìn thấy file của nhóm chăm sóc riêng mình.'}
-      scroll={false}
-    >
+    <ScreenFrame scroll={false}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         {loading ? <ActivityIndicator color={palette.brand} /> : null}
         {error ? <Text style={styles.errorText}>{error}</Text> : null}

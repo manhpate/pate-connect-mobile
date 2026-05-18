@@ -1,17 +1,28 @@
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { palette, radius, spacing } from '../theme/tokens';
+import { palette, radius, shadows, spacing } from '../theme/tokens';
+
+interface FloatingControlHelpers {
+  scrollToTop: () => void;
+}
 
 interface ScreenFrameProps {
-  title: string;
+  title?: string;
   subtitle?: string;
   children: React.ReactNode;
   headerAction?: React.ReactNode;
   onBack?: () => void;
   scroll?: boolean;
+  onEndReached?: () => void;
+  endReachedThreshold?: number;
+  showScrollTop?: boolean;
+  scrollTopThreshold?: number;
+  scrollTopRevealDistance?: number;
+  floatingButtonPosition?: 'left' | 'right';
+  floatingAccessory?: (helpers: FloatingControlHelpers) => React.ReactNode;
 }
 
 export function ScreenFrame({
@@ -21,9 +32,62 @@ export function ScreenFrame({
   headerAction,
   onBack,
   scroll = true,
+  onEndReached,
+  endReachedThreshold = 120,
+  showScrollTop = false,
+  scrollTopThreshold = 80,
+  scrollTopRevealDistance = 24,
+  floatingButtonPosition = 'left',
+  floatingAccessory,
 }: ScreenFrameProps) {
+  const scrollViewRef = useRef<ScrollView | null>(null);
+  const lastScrollYRef = useRef(0);
+  const upwardDistanceRef = useRef(0);
+  const [showFloatingControls, setShowFloatingControls] = useState(false);
+  const hasHeader = Boolean(title || subtitle || headerAction || onBack);
+  const scrollToTop = () => {
+    setShowFloatingControls(false);
+    upwardDistanceRef.current = 0;
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  };
+  const accessory = floatingAccessory?.({ scrollToTop });
   const content = scroll ? (
-    <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      ref={scrollViewRef}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+      scrollEventThrottle={120}
+      onScroll={({ nativeEvent }) => {
+        const currentY = Math.max(0, nativeEvent.contentOffset.y);
+        if (showScrollTop) {
+          const delta = currentY - lastScrollYRef.current;
+
+          if (currentY <= scrollTopThreshold) {
+            upwardDistanceRef.current = 0;
+            setShowFloatingControls((prev) => (prev ? false : prev));
+          } else if (delta < -1) {
+            upwardDistanceRef.current += Math.abs(delta);
+            if (upwardDistanceRef.current >= scrollTopRevealDistance) {
+              setShowFloatingControls((prev) => (prev ? prev : true));
+            }
+          } else if (delta > 1) {
+            upwardDistanceRef.current = 0;
+            setShowFloatingControls((prev) => (prev ? false : prev));
+          }
+        }
+        lastScrollYRef.current = currentY;
+
+        if (onEndReached) {
+          const distanceFromBottom =
+            nativeEvent.contentSize.height -
+            nativeEvent.layoutMeasurement.height -
+            nativeEvent.contentOffset.y;
+          if (distanceFromBottom <= endReachedThreshold) {
+            onEndReached();
+          }
+        }
+      }}
+    >
       {children}
     </ScrollView>
   ) : (
@@ -32,19 +96,48 @@ export function ScreenFrame({
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        {onBack ? (
-          <Pressable accessibilityRole="button" accessibilityLabel="Quay lại" style={styles.backButton} onPress={onBack}>
-            <Ionicons name="arrow-back" size={20} color={palette.surface} />
-          </Pressable>
-        ) : null}
-        <View style={styles.headerCopy}>
-          <Text style={styles.title}>{title}</Text>
-          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      {hasHeader ? (
+        <View style={styles.header}>
+          {onBack ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Quay lại" style={styles.backButton} onPress={onBack}>
+              <Ionicons name="arrow-back" size={20} color={palette.surface} />
+            </Pressable>
+          ) : null}
+          <View style={styles.headerCopy}>
+            {title ? <Text style={styles.title}>{title}</Text> : null}
+            {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+          </View>
+          {headerAction}
         </View>
-        {headerAction}
-      </View>
+      ) : null}
       {content}
+      {scroll && showScrollTop && showFloatingControls ? (
+        <View pointerEvents="box-none" style={styles.floatingLayer}>
+          <View style={accessory ? styles.floatingBar : styles.floatingSolo}>
+            {floatingButtonPosition === 'left' ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Lên đầu danh sách"
+                style={styles.scrollTopButton}
+                onPress={scrollToTop}
+              >
+                <Ionicons name="arrow-up" size={17} color={palette.brandDark} />
+              </Pressable>
+            ) : null}
+            {accessory ? <View style={styles.floatingAccessory}>{accessory}</View> : null}
+            {floatingButtonPosition === 'right' ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Lên đầu danh sách"
+                style={styles.scrollTopButton}
+                onPress={scrollToTop}
+              >
+                <Ionicons name="arrow-up" size={17} color={palette.brandDark} />
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -95,5 +188,44 @@ const styles = StyleSheet.create({
   },
   fill: {
     flex: 1,
+  },
+  floatingLayer: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: spacing.md,
+    right: spacing.md,
+    zIndex: 20,
+    alignItems: 'flex-end',
+  },
+  floatingBar: {
+    width: '100%',
+    minHeight: 46,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
+    ...shadows.card,
+  },
+  floatingSolo: {
+    alignSelf: 'flex-end',
+  },
+  scrollTopButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: palette.brandSoft,
+    borderWidth: 1,
+    borderColor: '#bceadf',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  floatingAccessory: {
+    flex: 1,
+    minWidth: 0,
   },
 });

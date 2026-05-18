@@ -1,5 +1,5 @@
 export type UserMode = 'customer' | 'internal';
-export type Channel = 'website' | 'zalo' | 'facebook';
+export type Channel = 'website' | 'zalo' | 'facebook' | 'instagram';
 export type MessageAuthorType = 'customer' | 'staff' | 'ai' | 'system' | 'me';
 export type FileKind = 'image' | 'design' | 'document';
 
@@ -13,6 +13,7 @@ export interface AppAccount {
   permissions: string[];
   groupId: number | null;
   groupName: string;
+  belongsToPateCompany: boolean;
   primaryRoomId: number | null;
   canModerateGroups: boolean;
   canUseInbox: boolean;
@@ -29,6 +30,16 @@ export interface MessageAttachment {
   mimeType?: string;
   sizeBytes?: number;
 }
+
+export interface UploadFile {
+  uri: string;
+  name: string;
+  mimeType: string;
+  sizeBytes?: number;
+  file?: unknown;
+}
+
+export interface UploadImageFile extends UploadFile {}
 
 export interface AppMessage {
   id: string;
@@ -54,6 +65,8 @@ export interface ConversationSummary {
   aiStatus: 'ready' | 'handoff' | 'closed';
   statusLabel: string;
   canReply: boolean;
+  canSendImages: boolean;
+  imageDisabledReason: string;
   messages?: AppMessage[];
 }
 

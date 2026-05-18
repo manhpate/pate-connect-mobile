@@ -2,15 +2,16 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { GroupRoom } from '../types/app';
+import { GroupRoom, UploadImageFile } from '../types/app';
 import { palette, radius, spacing } from '../theme/tokens';
+import { pickChatImage } from '../utils/chatImagePicker';
 import { ChatComposer } from './ChatComposer';
 import { MessageBubble } from './MessageBubble';
 
 interface GroupChatPanelProps {
   room: GroupRoom;
   currentUserName: string;
-  onSend: (body: string) => void;
+  onSend: (body: string, image?: UploadImageFile) => Promise<void> | void;
   onBack?: () => void;
   onOpenInfo: () => void;
   onOpenFiles: () => void;
@@ -25,7 +26,42 @@ export function GroupChatPanel({
   onOpenFiles,
 }: GroupChatPanelProps) {
   const [draft, setDraft] = useState('');
+  const [selectedImage, setSelectedImage] = useState<UploadImageFile | null>(null);
+  const [sending, setSending] = useState(false);
+  const memberCount = room.memberCount || room.members.length;
   const onlineCount = useMemo(() => room.members.filter((member) => member.online).length, [room.members]);
+
+  const handlePickImage = async () => {
+    try {
+      const result = await pickChatImage();
+      if (result.error) {
+        Alert.alert('Không chọn được ảnh', result.error);
+        return;
+      }
+      if (result.image) {
+        setSelectedImage(result.image);
+      }
+    } catch (error) {
+      Alert.alert('Không chọn được ảnh', error instanceof Error ? error.message : 'Không mở được thư viện ảnh.');
+    }
+  };
+
+  const handleSend = async () => {
+    if (!draft.trim() && !selectedImage) {
+      return;
+    }
+
+    setSending(true);
+    try {
+      await onSend(draft, selectedImage || undefined);
+      setDraft('');
+      setSelectedImage(null);
+    } catch (error) {
+      Alert.alert('Gửi tin nhắn thất bại', error instanceof Error ? error.message : 'Không gửi được tin nhắn.');
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <View style={styles.wrap}>
@@ -38,31 +74,30 @@ export function GroupChatPanel({
           ) : null}
           <View style={styles.headerCopy}>
             <Text style={styles.roomName}>{room.name}</Text>
-            <Text style={styles.roomMeta}>
-              {room.members.length} thành viên • {onlineCount} đang online
-            </Text>
+            <View style={styles.metaRow}>
+              <Text style={styles.roomMeta} numberOfLines={1}>
+                {memberCount} thành viên{room.members.length ? ` • ${onlineCount} đang online` : ''}
+              </Text>
+              <View style={styles.actions}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Kho file"
+                  style={[styles.iconAction, styles.fileAction]}
+                  onPress={onOpenFiles}
+                >
+                  <Ionicons name="cloud-upload-outline" size={17} color={palette.surface} />
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Thông tin nhóm"
+                  style={[styles.iconAction, styles.moreAction]}
+                  onPress={onOpenInfo}
+                >
+                  <Ionicons name="ellipsis-vertical" size={17} color={palette.ink} />
+                </Pressable>
+              </View>
+            </View>
           </View>
-        </View>
-        <View style={styles.actions}>
-          <Pressable
-            style={[styles.actionButton, styles.actionYellow]}
-            onPress={() =>
-              Alert.alert(
-                'Mời email',
-                'Luồng mời email trên mobile sẽ được nối tiếp. Dữ liệu nhóm chat hiện đã dùng trực tiếp từ app.invaihn.vn.',
-              )
-            }
-          >
-            <Ionicons name="person-add-outline" size={18} color={palette.ink} />
-            <Text style={styles.actionText}>Mời</Text>
-          </Pressable>
-          <Pressable style={[styles.actionButton, styles.actionGreen]} onPress={onOpenFiles}>
-            <Ionicons name="cloud-upload-outline" size={18} color={palette.surface} />
-            <Text style={[styles.actionText, styles.actionTextLight]}>File</Text>
-          </Pressable>
-          <Pressable style={[styles.actionButton, styles.actionYellow]} onPress={onOpenInfo}>
-            <Ionicons name="ellipsis-vertical" size={18} color={palette.ink} />
-          </Pressable>
         </View>
       </View>
 
@@ -75,13 +110,11 @@ export function GroupChatPanel({
       <ChatComposer
         value={draft}
         onChangeText={setDraft}
-        onSend={() => {
-          if (!draft.trim()) {
-            return;
-          }
-          onSend(draft);
-          setDraft('');
-        }}
+        onSend={handleSend}
+        onPickImage={handlePickImage}
+        selectedImage={selectedImage}
+        onRemoveImage={() => setSelectedImage(null)}
+        sending={sending}
       />
     </View>
   );
@@ -127,35 +160,32 @@ const styles = StyleSheet.create({
     color: palette.ink,
   },
   roomMeta: {
+    flex: 1,
     color: palette.textSoft,
     lineHeight: 20,
   },
-  actions: {
+  metaRow: {
+    minHeight: 34,
     flexDirection: 'row',
-    gap: spacing.sm,
-    flexWrap: 'wrap',
-  },
-  actionButton: {
-    minHeight: 44,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  actions: {
     flexDirection: 'row',
     gap: spacing.xs,
   },
-  actionYellow: {
-    backgroundColor: palette.accent,
+  iconAction: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  actionGreen: {
+  fileAction: {
     backgroundColor: palette.brand,
   },
-  actionText: {
-    fontWeight: '800',
-    color: palette.ink,
-  },
-  actionTextLight: {
-    color: palette.surface,
+  moreAction: {
+    backgroundColor: palette.accent,
   },
   messages: {
     paddingHorizontal: spacing.lg,

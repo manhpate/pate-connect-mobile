@@ -1,4 +1,5 @@
 import { apiClient } from './apiClient';
+import { UploadFile, UploadImageFile } from '../types/app';
 
 export interface ApiEnvelope<T = unknown> {
   EC: number;
@@ -6,6 +7,32 @@ export interface ApiEnvelope<T = unknown> {
   DT: T;
   [key: string]: unknown;
 }
+
+const appendImageToFormData = (formData: FormData, image: UploadImageFile) => {
+  if (image.file) {
+    formData.append('image', image.file as Blob, image.name);
+    return;
+  }
+
+  formData.append('image', {
+    uri: image.uri,
+    name: image.name,
+    type: image.mimeType,
+  } as unknown as Blob);
+};
+
+const appendFileToFormData = (formData: FormData, file: UploadFile) => {
+  if (file.file) {
+    formData.append('file', file.file as Blob, file.name);
+    return;
+  }
+
+  formData.append('file', {
+    uri: file.uri,
+    name: file.name,
+    type: file.mimeType,
+  } as unknown as Blob);
+};
 
 export const loginWithPasswordApi = (tenDangNhap: string, password: string) =>
   apiClient.post('/api/v1/login', {
@@ -59,13 +86,48 @@ export const readChatGroupRoomInfoApi = (roomId: string) =>
 export const readChatGroupRoomFilesApi = (roomId: string) =>
   apiClient.get(`/api/chat-groups/rooms/${roomId}/files`) as Promise<ApiEnvelope<{ assets?: unknown[] }>>;
 
+export const uploadChatGroupRoomFileApi = (roomId: string, file: UploadFile) => {
+  const formData = new FormData();
+  appendFileToFormData(formData, file);
+
+  return apiClient.post(`/api/chat-groups/rooms/${roomId}/files/upload`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  }) as Promise<ApiEnvelope<{ asset?: unknown }>>;
+};
+
 export const sendChatGroupMessageApi = (roomId: string, text: string) =>
   apiClient.post(`/api/chat-groups/rooms/${roomId}/messages`, { text }) as Promise<
     ApiEnvelope<{ room?: unknown; message?: unknown }>
   >;
 
+export const sendChatGroupImageApi = (roomId: string, text: string, image: UploadImageFile) => {
+  const formData = new FormData();
+  if (text.trim()) {
+    formData.append('text', text.trim());
+  }
+  appendImageToFormData(formData, image);
+
+  return apiClient.post(`/api/chat-groups/rooms/${roomId}/images`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  }) as Promise<ApiEnvelope<{ room?: unknown; message?: unknown }>>;
+};
+
 export const markChatGroupRoomReadApi = (roomId: string) =>
   apiClient.post(`/api/chat-groups/rooms/${roomId}/mark-read`) as Promise<ApiEnvelope<unknown>>;
+
+export const inviteEmailsToChatGroupRoomApi = (roomId: string, payload: { emails: string[] }) =>
+  apiClient.post(`/api/chat-groups/rooms/${roomId}/members`, payload) as Promise<
+    ApiEnvelope<{ room?: unknown; messages?: unknown[] }>
+  >;
+
+export const createPrivateChatGroupRoomApi = (roomId: string, payload: { targetUserId: number }) =>
+  apiClient.post(`/api/chat-groups/rooms/${roomId}/private-message`, payload) as Promise<
+    ApiEnvelope<{ room?: unknown; messages?: unknown[] }>
+  >;
 
 export const updateChatGroupRoomInfoApi = (roomId: string, payload: { name: string }) =>
   apiClient.patch(`/api/chat-groups/rooms/${roomId}`, payload) as Promise<ApiEnvelope<{ room?: unknown }>>;
@@ -73,13 +135,34 @@ export const updateChatGroupRoomInfoApi = (roomId: string, payload: { name: stri
 export const removeMemberFromChatGroupRoomApi = (roomId: string, memberId: string) =>
   apiClient.delete(`/api/chat-groups/rooms/${roomId}/members/${memberId}`) as Promise<ApiEnvelope<{ room?: unknown }>>;
 
-export const readChatConversationsApi = () =>
+export const createChatGroupRoomRtcTokenApi = (
+  roomId: string,
+  payload: { targetUserId: number; channelName: string },
+) =>
+  apiClient.post(`/api/chat-groups/rooms/${roomId}/rtc-token`, payload) as Promise<
+    ApiEnvelope<{
+      appId?: string;
+      token?: string;
+      channelName?: string;
+      uid?: number;
+      targetUserId?: number;
+      expiresIn?: number;
+      expiresAt?: number;
+    }>
+  >;
+
+export const readChatConversationsApi = ({ limit = 50, offset = 0 } = {}) =>
   apiClient.get('/api/chat/conversations', {
     params: {
-      limit: 50,
-      offset: 0,
+      limit,
+      offset,
     },
-  }) as Promise<ApiEnvelope<{ conversations?: unknown[]; totalUnread?: number }>>;
+  }) as Promise<ApiEnvelope<{ conversations?: unknown[]; totalUnread?: number; pagination?: {
+    limit?: number;
+    offset?: number;
+    hasMore?: boolean;
+    nextOffset?: number | null;
+  } }>>;
 
 export const readChatConversationMessagesApi = (conversationId: string) =>
   apiClient.get(`/api/chat/conversations/${conversationId}/messages`, {
@@ -93,6 +176,20 @@ export const sendChatConversationMessageApi = (conversationId: string, text: str
     ApiEnvelope<{ conversation?: unknown; message?: unknown }>
   >;
 
+export const sendChatConversationImageApi = (conversationId: string, text: string, image: UploadImageFile) => {
+  const formData = new FormData();
+  if (text.trim()) {
+    formData.append('text', text.trim());
+  }
+  appendImageToFormData(formData, image);
+
+  return apiClient.post(`/api/chat/conversations/${conversationId}/images`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  }) as Promise<ApiEnvelope<{ conversation?: unknown; message?: unknown; messages?: unknown[] }>>;
+};
+
 export const markChatConversationReadApi = (conversationId: string) =>
   apiClient.post(`/api/chat/conversations/${conversationId}/mark-read`) as Promise<ApiEnvelope<unknown>>;
 
@@ -100,6 +197,15 @@ export const readNotificationsApi = () =>
   apiClient.post('/api/v1/thongbao/readThongBao_UserById', {}) as Promise<
     ApiEnvelope<{ notifications?: unknown[]; unreadCount?: number }>
   >;
+
+export const readNotificationsPageApi = (userId: number, page = 1, limit = 10) =>
+  apiClient.get('/api/v1/thongbao/getThongBaoByPage', {
+    params: {
+      userid: userId,
+      page,
+      limit,
+    },
+  }) as Promise<ApiEnvelope<unknown[]> & { hasMore?: boolean }>;
 
 export const markNotificationReadApi = (userId: number, thongbaoId: string) =>
   apiClient.post('/api/v1/thongbao/markThongBaoAsRead', {

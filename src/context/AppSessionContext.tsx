@@ -4,7 +4,9 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { AUTH_TOKEN_STORAGE_KEY } from '../config/appConfig';
 import {
   checkAccountApi,
+  createPrivateChatGroupRoomApi,
   ensureWebsiteChatGroupRoomApi,
+  inviteEmailsToChatGroupRoomApi,
   loginWithGoogleApi,
   loginWithPasswordApi,
   logoutApi,
@@ -18,21 +20,27 @@ import {
   readChatGroupRoomInfoApi,
   readChatGroupRoomMessagesApi,
   readChatGroupRoomsApi,
-  readNotificationsApi,
+  readNotificationsPageApi,
   removeMemberFromChatGroupRoomApi,
   sendChatConversationMessageApi,
+  sendChatConversationImageApi,
+  sendChatGroupImageApi,
   sendChatGroupMessageApi,
   updateChatGroupRoomInfoApi,
+  uploadChatGroupRoomFileApi,
 } from '../services/mobileApi';
 import { setApiAccessToken } from '../services/apiClient';
 import { signInFirebaseWithBackendToken, signOutFirebase } from '../services/firebaseAuth';
 import {
   AppAccount,
   AppMessage,
+  Channel,
   ConversationSummary,
   GroupFile,
   GroupRoom,
   NotificationItem,
+  UploadFile,
+  UploadImageFile,
 } from '../types/app';
 import {
   mapAccount,
@@ -45,9 +53,21 @@ import {
 
 type AuthState = 'loading' | 'signed_out' | 'ready';
 
+const CONVERSATION_PAGE_SIZE = 30;
+const CONVERSATION_FILTER_PAGE_SIZE = 100;
+const CONVERSATION_FILTER_MAX_PAGES = 3;
+const NOTIFICATION_PAGE_SIZE = 10;
+
 interface SignInResult {
   ok: boolean;
   error?: string;
+}
+
+interface ListPaginationState {
+  hasMore: boolean;
+  loadingMore: boolean;
+  nextOffset?: number | null;
+  page?: number;
 }
 
 interface AppSessionContextValue {
@@ -57,6 +77,8 @@ interface AppSessionContextValue {
   conversations: ConversationSummary[];
   rooms: GroupRoom[];
   notifications: NotificationItem[];
+  conversationPagination: ListPaginationState;
+  notificationPagination: ListPaginationState;
   signInWithPassword: (tenDangNhap: string, password: string) => Promise<SignInResult>;
   signInWithGoogleProfile: (profile: {
     uid: string;
@@ -66,19 +88,27 @@ interface AppSessionContextValue {
   }) => Promise<SignInResult>;
   signOut: () => Promise<void>;
   refreshConversations: () => Promise<void>;
+  loadMoreConversations: () => Promise<void>;
+  loadConversationsUntilChannel: (channel: Channel) => Promise<boolean>;
   refreshRooms: () => Promise<void>;
   refreshNotifications: () => Promise<void>;
+  loadMoreNotifications: () => Promise<void>;
   ensureCustomerPrimaryRoom: () => Promise<GroupRoom | null>;
   loadRoomDetail: (roomId: string) => Promise<GroupRoom | null>;
   loadRoomInfo: (roomId: string) => Promise<GroupRoom | null>;
   loadRoomFiles: (roomId: string) => Promise<GroupFile[]>;
+  uploadRoomFile: (roomId: string, file: UploadFile) => Promise<GroupFile | null>;
   markRoomRead: (roomId: string) => Promise<void>;
   sendRoomMessage: (roomId: string, body: string) => Promise<AppMessage | null>;
+  sendRoomImage: (roomId: string, body: string, image: UploadImageFile) => Promise<AppMessage | null>;
+  inviteEmailsToRoom: (roomId: string, emails: string[]) => Promise<GroupRoom | null>;
+  createPrivateRoomFromMember: (sourceRoomId: string, targetUserId: number) => Promise<GroupRoom | null>;
   renameRoom: (roomId: string, nextName: string) => Promise<GroupRoom | null>;
   removeMemberFromRoom: (roomId: string, memberId: string) => Promise<GroupRoom | null>;
   loadConversationDetail: (conversationId: string) => Promise<ConversationSummary | null>;
   markConversationRead: (conversationId: string) => Promise<void>;
   sendConversationMessage: (conversationId: string, body: string) => Promise<AppMessage | null>;
+  sendConversationImage: (conversationId: string, body: string, image: UploadImageFile) => Promise<AppMessage[]>;
   markNotificationRead: (notificationId: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
 }
@@ -86,6 +116,36 @@ interface AppSessionContextValue {
 const AppSessionContext = createContext<AppSessionContextValue | undefined>(undefined);
 
 const sortRooms = (rooms: GroupRoom[]) => [...rooms].sort((a, b) => Number(b.id) - Number(a.id));
+const sortConversations = (conversations: ConversationSummary[]) =>
+  [...conversations].sort((a, b) => {
+    const timeA = new Date(a.lastMessageAtRaw || 0).getTime();
+    const timeB = new Date(b.lastMessageAtRaw || 0).getTime();
+    const safeTimeA = Number.isNaN(timeA) ? 0 : timeA;
+    const safeTimeB = Number.isNaN(timeB) ? 0 : timeB;
+    if (safeTimeA !== safeTimeB) return safeTimeB - safeTimeA;
+    return Number(b.id || 0) - Number(a.id || 0);
+  });
+
+const mergeConversations = (current: ConversationSummary[], incoming: ConversationSummary[]) => {
+  const byId = new Map<string, ConversationSummary>();
+  [...current, ...incoming].forEach((conversation) => {
+    byId.set(conversation.id, {
+      ...(byId.get(conversation.id) || {}),
+      ...conversation,
+    });
+  });
+
+  return sortConversations(Array.from(byId.values()));
+};
+
+const getApiErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'EM' in error) {
+    const message = String((error as { EM?: unknown }).EM || '').trim();
+    if (message) return message;
+  }
+  return fallback;
+};
 
 const upsertRoom = (rooms: GroupRoom[], room: GroupRoom) => {
   const index = rooms.findIndex((item) => item.id === room.id);
@@ -140,11 +200,37 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [rooms, setRooms] = useState<GroupRoom[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [conversationPagination, setConversationPagination] = useState<ListPaginationState>({
+    hasMore: false,
+    loadingMore: false,
+    nextOffset: 0,
+  });
+  const [notificationPagination, setNotificationPagination] = useState<ListPaginationState>({
+    hasMore: false,
+    loadingMore: false,
+    page: 1,
+  });
   const currentUserRef = useRef<AppAccount | null>(null);
+  const conversationsRef = useRef<ConversationSummary[]>([]);
+  const conversationPaginationRef = useRef<ListPaginationState>({
+    hasMore: false,
+    loadingMore: false,
+    nextOffset: 0,
+  });
+  const loadingMoreConversationsRef = useRef(false);
+  const loadingMoreNotificationsRef = useRef(false);
 
   useEffect(() => {
     currentUserRef.current = currentUser;
   }, [currentUser]);
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
+    conversationPaginationRef.current = conversationPagination;
+  }, [conversationPagination]);
 
   const clearSessionState = useCallback(async () => {
     try {
@@ -156,8 +242,12 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     currentUserRef.current = null;
     setCurrentUser(null);
     setConversations([]);
+    conversationsRef.current = [];
     setRooms([]);
     setNotifications([]);
+    conversationPaginationRef.current = { hasMore: false, loadingMore: false, nextOffset: 0 };
+    setConversationPagination({ hasMore: false, loadingMore: false, nextOffset: 0 });
+    setNotificationPagination({ hasMore: false, loadingMore: false, page: 1 });
     setAuthError('');
     setAuthState('signed_out');
     await AsyncStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
@@ -194,10 +284,16 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     const user = userOverride || currentUserRef.current;
     if (!user?.canUseInbox) {
       setConversations([]);
+      conversationsRef.current = [];
+      conversationPaginationRef.current = { hasMore: false, loadingMore: false, nextOffset: 0 };
+      setConversationPagination({ hasMore: false, loadingMore: false, nextOffset: 0 });
       return;
     }
 
-    const response = await readChatConversationsApi();
+    const response = await readChatConversationsApi({
+      limit: CONVERSATION_PAGE_SIZE,
+      offset: 0,
+    });
     if (Number(response?.EC) !== 0) {
       throw new Error(response?.EM || 'Không tải được danh sách hội thoại');
     }
@@ -205,27 +301,48 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     const nextConversations = Array.isArray(response?.DT?.conversations)
       ? response.DT.conversations.map((item) => mapConversationSummary((item || {}) as Record<string, unknown>))
       : [];
+    conversationsRef.current = nextConversations;
     setConversations(nextConversations);
+    const pagination = response?.DT?.pagination || {};
+    const nextPagination = {
+      hasMore: Boolean(pagination.hasMore),
+      loadingMore: false,
+      nextOffset: typeof pagination.nextOffset === 'number' ? pagination.nextOffset : nextConversations.length,
+    };
+    conversationPaginationRef.current = nextPagination;
+    setConversationPagination(nextPagination);
   }, []);
 
   const refreshNotificationsForUser = useCallback(async (userOverride?: AppAccount | null) => {
     const user = userOverride || currentUserRef.current;
     if (!user?.canUseNotifications) {
       setNotifications([]);
+      setNotificationPagination({ hasMore: false, loadingMore: false, page: 1 });
       return;
     }
 
-    const response = await readNotificationsApi();
+    const response = await readNotificationsPageApi(user.id, 1, NOTIFICATION_PAGE_SIZE);
     if (Number(response?.EC) !== 0) {
       throw new Error(response?.EM || 'Không tải được thông báo');
     }
 
-    const nextNotifications = Array.isArray(response?.DT?.notifications)
-      ? response.DT.notifications.map((item) =>
+    const rawNotifications = Array.isArray(response?.DT)
+      ? response.DT
+      : Array.isArray((response?.DT as { notifications?: unknown[] } | undefined)?.notifications)
+        ? (response.DT as { notifications?: unknown[] }).notifications || []
+        : [];
+
+    const nextNotifications = rawNotifications.length > 0
+      ? rawNotifications.map((item) =>
           mapNotificationItem((item || {}) as Record<string, unknown>, user.mode),
         )
       : [];
     setNotifications(nextNotifications);
+    setNotificationPagination({
+      hasMore: Boolean(response?.hasMore),
+      loadingMore: false,
+      page: 1,
+    });
   }, []);
 
   const ensureCustomerPrimaryRoomForUser = useCallback(async (userOverride?: AppAccount | null) => {
@@ -406,9 +523,178 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     await refreshConversationsForUser();
   }, [refreshConversationsForUser]);
 
+  const loadMoreConversations = useCallback(async () => {
+    const user = currentUserRef.current;
+    const currentPagination = conversationPaginationRef.current;
+    const currentConversations = conversationsRef.current;
+    if (
+      !user?.canUseInbox ||
+      loadingMoreConversationsRef.current ||
+      currentPagination.loadingMore ||
+      !currentPagination.hasMore
+    ) {
+      return;
+    }
+
+    loadingMoreConversationsRef.current = true;
+    conversationPaginationRef.current = { ...currentPagination, loadingMore: true };
+    setConversationPagination((prev) => ({ ...prev, loadingMore: true }));
+    try {
+      const offset = Number(currentPagination.nextOffset || currentConversations.length || 0);
+      const response = await readChatConversationsApi({
+        limit: CONVERSATION_PAGE_SIZE,
+        offset,
+      });
+      if (Number(response?.EC) !== 0) {
+        throw new Error(response?.EM || 'Không tải thêm được hội thoại');
+      }
+
+      const nextConversations = Array.isArray(response?.DT?.conversations)
+        ? response.DT.conversations.map((item) => mapConversationSummary((item || {}) as Record<string, unknown>))
+        : [];
+      const pagination = response?.DT?.pagination || {};
+      const mergedConversations = mergeConversations(conversationsRef.current, nextConversations);
+      const nextPagination = {
+        hasMore: Boolean(pagination.hasMore),
+        loadingMore: false,
+        nextOffset: typeof pagination.nextOffset === 'number'
+          ? pagination.nextOffset
+          : offset + nextConversations.length,
+      };
+
+      conversationsRef.current = mergedConversations;
+      conversationPaginationRef.current = nextPagination;
+      setConversations(mergedConversations);
+      setConversationPagination(nextPagination);
+    } catch (error) {
+      console.warn('Không tải thêm được hội thoại:', error);
+      conversationPaginationRef.current = { ...conversationPaginationRef.current, hasMore: false, loadingMore: false };
+      setConversationPagination((prev) => ({ ...prev, hasMore: false, loadingMore: false }));
+    } finally {
+      loadingMoreConversationsRef.current = false;
+    }
+  }, []);
+
+  const loadConversationsUntilChannel = useCallback(async (channel: Channel) => {
+    const user = currentUserRef.current;
+    if (!user?.canUseInbox) {
+      return false;
+    }
+
+    if (conversationsRef.current.some((conversation) => conversation.channel === channel)) {
+      return true;
+    }
+
+    if (loadingMoreConversationsRef.current || !conversationPaginationRef.current.hasMore) {
+      return false;
+    }
+
+    loadingMoreConversationsRef.current = true;
+    conversationPaginationRef.current = { ...conversationPaginationRef.current, loadingMore: true };
+    setConversationPagination((prev) => ({ ...prev, loadingMore: true }));
+
+    try {
+      let nextConversations = conversationsRef.current;
+      let nextPagination = conversationPaginationRef.current;
+      let found = nextConversations.some((conversation) => conversation.channel === channel);
+
+      for (let index = 0; index < CONVERSATION_FILTER_MAX_PAGES && !found && nextPagination.hasMore; index += 1) {
+        const offset = Number(nextPagination.nextOffset || nextConversations.length || 0);
+        const response = await readChatConversationsApi({
+          limit: CONVERSATION_FILTER_PAGE_SIZE,
+          offset,
+        });
+        if (Number(response?.EC) !== 0) {
+          throw new Error(response?.EM || 'Không tải thêm được hội thoại');
+        }
+
+        const incoming = Array.isArray(response?.DT?.conversations)
+          ? response.DT.conversations.map((item) => mapConversationSummary((item || {}) as Record<string, unknown>))
+          : [];
+        const pagination = response?.DT?.pagination || {};
+
+        nextConversations = mergeConversations(nextConversations, incoming);
+        found = nextConversations.some((conversation) => conversation.channel === channel);
+        nextPagination = {
+          hasMore: Boolean(pagination.hasMore),
+          loadingMore: true,
+          nextOffset: typeof pagination.nextOffset === 'number'
+            ? pagination.nextOffset
+            : offset + incoming.length,
+        };
+
+        conversationsRef.current = nextConversations;
+        conversationPaginationRef.current = nextPagination;
+        setConversations(nextConversations);
+
+        if (incoming.length === 0 && !nextPagination.hasMore) {
+          break;
+        }
+      }
+
+      const settledPagination = { ...nextPagination, loadingMore: false };
+      conversationPaginationRef.current = settledPagination;
+      setConversationPagination(settledPagination);
+      return found;
+    } catch (error) {
+      console.warn('Không tải thêm được hội thoại theo kênh:', error);
+      conversationPaginationRef.current = { ...conversationPaginationRef.current, loadingMore: false };
+      setConversationPagination((prev) => ({ ...prev, loadingMore: false }));
+      return false;
+    } finally {
+      loadingMoreConversationsRef.current = false;
+    }
+  }, []);
+
   const refreshNotifications = useCallback(async () => {
     await refreshNotificationsForUser();
   }, [refreshNotificationsForUser]);
+
+  const loadMoreNotifications = useCallback(async () => {
+    const user = currentUserRef.current;
+    if (
+      !user?.canUseNotifications ||
+      loadingMoreNotificationsRef.current ||
+      notificationPagination.loadingMore ||
+      !notificationPagination.hasMore
+    ) {
+      return;
+    }
+
+    loadingMoreNotificationsRef.current = true;
+    setNotificationPagination((prev) => ({ ...prev, loadingMore: true }));
+    const nextPage = Number(notificationPagination.page || 1) + 1;
+    try {
+      const response = await readNotificationsPageApi(user.id, nextPage, NOTIFICATION_PAGE_SIZE);
+      if (Number(response?.EC) !== 0) {
+        throw new Error(response?.EM || 'Không tải thêm được thông báo');
+      }
+
+      const nextNotifications = Array.isArray(response?.DT)
+        ? response.DT.map((item) => mapNotificationItem((item || {}) as Record<string, unknown>, user.mode))
+        : [];
+
+      setNotifications((prev) => {
+        const byId = new Map<string, NotificationItem>();
+        [...prev, ...nextNotifications].forEach((item) => byId.set(item.id, item));
+        return Array.from(byId.values());
+      });
+      setNotificationPagination({
+        hasMore: Boolean(response?.hasMore),
+        loadingMore: false,
+        page: nextPage,
+      });
+    } catch (error) {
+      console.warn('Không tải thêm được thông báo:', error);
+      setNotificationPagination((prev) => ({ ...prev, hasMore: false, loadingMore: false }));
+    } finally {
+      loadingMoreNotificationsRef.current = false;
+    }
+  }, [
+    notificationPagination.hasMore,
+    notificationPagination.loadingMore,
+    notificationPagination.page,
+  ]);
 
   const ensureCustomerPrimaryRoom = useCallback(async () => ensureCustomerPrimaryRoomForUser(), [ensureCustomerPrimaryRoomForUser]);
 
@@ -462,6 +748,26 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     return files;
   }, []);
 
+  const uploadRoomFile = useCallback(async (roomId: string, file: UploadFile) => {
+    const response = await uploadChatGroupRoomFileApi(roomId, file);
+    if (Number(response?.EC) !== 0 || !response?.DT?.asset) {
+      throw new Error(response?.EM || 'Không upload được file');
+    }
+
+    const uploadedFile = mapGroupFile((response.DT.asset || {}) as Record<string, unknown>);
+    setRooms((prev) => {
+      const index = prev.findIndex((room) => room.id === roomId);
+      if (index === -1) return prev;
+      const next = [...prev];
+      next[index] = {
+        ...next[index],
+        files: [uploadedFile, ...next[index].files.filter((item) => item.id !== uploadedFile.id)],
+      };
+      return next;
+    });
+    return uploadedFile;
+  }, []);
+
   const markRoomRead = useCallback(async (roomId: string) => {
     setRooms((prev) => prev.map((room) => (room.id === roomId ? { ...room, unread: 0 } : room)));
     try {
@@ -496,8 +802,81 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     return message;
   }, [refreshRoomsForUser]);
 
+  const sendRoomImage = useCallback(async (roomId: string, body: string, image: UploadImageFile) => {
+    const response = await sendChatGroupImageApi(roomId, body.trim(), image);
+    if (Number(response?.EC) !== 0 || !response?.DT?.message) {
+      throw new Error(response?.EM || 'Không gửi được ảnh nhóm');
+    }
+
+    const message = mapAppMessage((response.DT.message || {}) as Record<string, unknown>);
+    setRooms((prev) =>
+      prev.map((room) =>
+        room.id === roomId
+          ? {
+              ...room,
+              unread: 0,
+              messages: [...room.messages, message],
+            }
+          : room,
+      ),
+    );
+    await refreshRoomsForUser();
+    return message;
+  }, [refreshRoomsForUser]);
+
+  const inviteEmailsToRoom = useCallback(async (roomId: string, emails: string[]) => {
+    const cleanEmails = [...new Set(emails.map((email) => String(email || '').trim().toLowerCase()).filter(Boolean))];
+    if (cleanEmails.length === 0) {
+      throw new Error('Nhập ít nhất một email cần mời.');
+    }
+
+    let response;
+    try {
+      response = await inviteEmailsToChatGroupRoomApi(roomId, { emails: cleanEmails });
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, 'Không mời được email vào nhóm'));
+    }
+    if (Number(response?.EC) !== 0 || !response?.DT?.room) {
+      throw new Error(response?.EM || 'Không mời được email vào nhóm');
+    }
+
+    const room = mapGroupRoom(
+      (response.DT.room || {}) as Record<string, unknown>,
+      {
+        messages: Array.isArray(response?.DT?.messages)
+          ? response.DT.messages.map((message) => mapAppMessage((message || {}) as Record<string, unknown>))
+          : [],
+      },
+    );
+    setRooms((prev) => upsertRoom(prev, room));
+    return room;
+  }, []);
+
+  const createPrivateRoomFromMember = useCallback(async (sourceRoomId: string, targetUserId: number) => {
+    const response = await createPrivateChatGroupRoomApi(sourceRoomId, { targetUserId });
+    if (Number(response?.EC) !== 0 || !response?.DT?.room) {
+      throw new Error(response?.EM || 'Không tạo được nhóm nhắn riêng');
+    }
+
+    const room = mapGroupRoom(
+      (response.DT.room || {}) as Record<string, unknown>,
+      {
+        messages: Array.isArray(response?.DT?.messages)
+          ? response.DT.messages.map((message) => mapAppMessage((message || {}) as Record<string, unknown>))
+          : [],
+      },
+    );
+    setRooms((prev) => upsertRoom(prev, room));
+    return room;
+  }, []);
+
   const renameRoom = useCallback(async (roomId: string, nextName: string) => {
-    const response = await updateChatGroupRoomInfoApi(roomId, { name: nextName.trim() });
+    let response;
+    try {
+      response = await updateChatGroupRoomInfoApi(roomId, { name: nextName.trim() });
+    } catch (error) {
+      throw new Error(getApiErrorMessage(error, 'Không đổi được tên nhóm'));
+    }
     if (Number(response?.EC) !== 0 || !response?.DT?.room) {
       throw new Error(response?.EM || 'Không đổi được tên nhóm');
     }
@@ -576,6 +955,36 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     return message;
   }, [refreshConversationsForUser]);
 
+  const sendConversationImage = useCallback(async (conversationId: string, body: string, image: UploadImageFile) => {
+    const response = await sendChatConversationImageApi(conversationId, body.trim(), image);
+    if (Number(response?.EC) !== 0 || (!response?.DT?.message && !response?.DT?.messages)) {
+      throw new Error(response?.EM || 'Không gửi được ảnh hội thoại');
+    }
+
+    const messages = Array.isArray(response?.DT?.messages) && response.DT.messages.length > 0
+      ? response.DT.messages.map((message) => mapAppMessage((message || {}) as Record<string, unknown>))
+      : response?.DT?.message
+        ? [mapAppMessage((response.DT.message || {}) as Record<string, unknown>)]
+        : [];
+
+    setConversations((prev) =>
+      prev.map((conversation) =>
+        conversation.id === conversationId
+          ? {
+              ...conversation,
+              preview: messages[messages.length - 1]?.body || conversation.preview,
+              lastMessageAt: messages[messages.length - 1]?.sentAt || conversation.lastMessageAt,
+              lastMessageAtRaw: messages[messages.length - 1]?.sentAtRaw || conversation.lastMessageAtRaw,
+              unread: 0,
+              messages: [...(conversation.messages || []), ...messages],
+            }
+          : conversation,
+      ),
+    );
+    await refreshConversationsForUser();
+    return messages;
+  }, [refreshConversationsForUser]);
+
   const markNotificationRead = useCallback(async (notificationId: string) => {
     if (!currentUser?.id) return;
     const current = notifications.find((item) => item.id === notificationId);
@@ -602,40 +1011,58 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       conversations,
       rooms,
       notifications,
+      conversationPagination,
+      notificationPagination,
       signInWithPassword,
       signInWithGoogleProfile,
       signOut,
       refreshConversations,
+      loadMoreConversations,
+      loadConversationsUntilChannel,
       refreshRooms,
       refreshNotifications,
+      loadMoreNotifications,
       ensureCustomerPrimaryRoom,
       loadRoomDetail,
       loadRoomInfo,
       loadRoomFiles,
+      uploadRoomFile,
       markRoomRead,
       sendRoomMessage,
+      sendRoomImage,
+      inviteEmailsToRoom,
+      createPrivateRoomFromMember,
       renameRoom,
       removeMemberFromRoom,
       loadConversationDetail,
       markConversationRead,
       sendConversationMessage,
+      sendConversationImage,
       markNotificationRead,
       markAllNotificationsRead,
     }),
     [
       authError,
       authState,
+      conversationPagination,
       conversations,
       currentUser,
       ensureCustomerPrimaryRoom,
+      loadMoreConversations,
+      loadConversationsUntilChannel,
+      loadMoreNotifications,
       loadConversationDetail,
       loadRoomDetail,
       loadRoomFiles,
       loadRoomInfo,
+      uploadRoomFile,
+      createPrivateRoomFromMember,
+      inviteEmailsToRoom,
       markAllNotificationsRead,
       markConversationRead,
       markNotificationRead,
       markRoomRead,
+      notificationPagination,
       notifications,
       refreshConversations,
       refreshNotifications,
@@ -644,6 +1071,8 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       renameRoom,
       rooms,
       sendConversationMessage,
+      sendConversationImage,
+      sendRoomImage,
       sendRoomMessage,
       signInWithGoogleProfile,
       signInWithPassword,

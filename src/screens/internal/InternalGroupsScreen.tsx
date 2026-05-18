@@ -40,10 +40,7 @@ export function InternalGroupsScreen() {
   }, [refreshRooms]);
 
   return (
-    <ScreenFrame
-      title="Nhóm chat"
-      subtitle="Các nhóm đang hoạt động cho khách website và nhóm nội bộ vận hành."
-    >
+    <ScreenFrame showScrollTop>
       {loading ? <ActivityIndicator color={palette.brand} /> : null}
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
       {rooms.map((room) => (
