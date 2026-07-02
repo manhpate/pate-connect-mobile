@@ -52,12 +52,18 @@ export interface AppMessage {
   isMine?: boolean;
 }
 
+export interface MessagePageState {
+  hasMoreBefore: boolean;
+  nextBeforeMessageId: string | null;
+}
+
 export interface ConversationSummary {
   id: string;
   channel: Channel;
   rawChannel: string;
   customerName: string;
   title: string;
+  meta?: Record<string, unknown>;
   preview: string;
   lastMessageAt: string;
   lastMessageAtRaw?: string | null;
@@ -68,6 +74,8 @@ export interface ConversationSummary {
   canSendImages: boolean;
   imageDisabledReason: string;
   messages?: AppMessage[];
+  hasMoreBefore: boolean;
+  nextBeforeMessageId: string | null;
 }
 
 export interface GroupMember {
@@ -105,6 +113,8 @@ export interface GroupRoom {
   members: GroupMember[];
   files: GroupFile[];
   messages: AppMessage[];
+  hasMoreBefore: boolean;
+  nextBeforeMessageId: string | null;
   canManageMembers: boolean;
   canEditRoom: boolean;
   canRemoveMembers: boolean;

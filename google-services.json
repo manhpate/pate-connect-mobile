@@ -77,6 +77,50 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1001728301885:android:80421119baac76f7e34354",
+        "android_client_info": {
+          "package_name": "invaihn.vn.pateconnect"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1001728301885-2nj5lb2o3eoe5ghfpc70jqpujtfa6pnv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "invaihn.vn.pateconnect",
+            "certificate_hash": "ece5275ae49063b13c50bef50ecb13d9c8d78062"
+          }
+        },
+        {
+          "client_id": "1001728301885-v8vq8lipg0gqr43e4bfv7c22uclatj59.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDPPtB4TYahYlShZO-jfkLxtF-relZetqc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1001728301885-v8vq8lipg0gqr43e4bfv7c22uclatj59.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1001728301885-aauals89uci3boope87sdqsqvejdkgtv.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.pate.connect"
+              }
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"

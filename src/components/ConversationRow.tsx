@@ -8,8 +8,8 @@ import { palette, radius, shadows, spacing } from '../theme/tokens';
 const channelLabel = {
   website: 'Website',
   zalo: 'Zalo OA',
-  facebook: 'Facebook',
-  instagram: 'Instagram',
+  facebook: 'FB',
+  instagram: 'IG',
 };
 
 const channelColor = {

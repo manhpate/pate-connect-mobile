@@ -1,27 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ChatComposer } from '../../components/ChatComposer';
-import { MessageBubble } from '../../components/MessageBubble';
+import { ChatMessageList } from '../../components/ChatMessageList';
 import { useAppSession } from '../../context/AppSessionContext';
-import { palette, radius, spacing } from '../../theme/tokens';
+import { palette, spacing } from '../../theme/tokens';
 import { ConversationSummary, RootStackParamList, UploadImageFile } from '../../types/app';
 import { pickChatImage } from '../../utils/chatImagePicker';
+import { getConversationChannelShortLabel } from '../../utils/mappers';
+import { mergeMessagesChronologically } from '../../utils/messageMerge';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Conversation'>;
-
-const aiHintByChannel = {
-  website:
-    'Ưu tiên xin số điện thoại và mời khách đăng nhập Google trên invaihn.vn. Sau đó chốt rằng nhân viên sẽ liên hệ sớm nhất.',
-  zalo:
-    'Trả lời ngắn, xác nhận đã tiếp nhận rồi kéo khách sang invaihn.vn để gửi file và làm việc thuận tiện hơn.',
-  facebook:
-    'Tối đa 1 lượt auto. Kéo khách về invaihn.vn, tránh hỏi dồn nhiều câu trong lần đầu.',
-  instagram:
-    'Trả lời ngắn như Facebook, ưu tiên kéo khách về invaihn.vn để gửi file và lưu thông tin làm việc.',
-};
 
 export function ConversationScreen({ navigation, route }: Props) {
   const {
@@ -36,6 +27,7 @@ export function ConversationScreen({ navigation, route }: Props) {
   const [sending, setSending] = useState(false);
   const [conversation, setConversation] = useState<ConversationSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -76,11 +68,17 @@ export function ConversationScreen({ navigation, route }: Props) {
   const renderHeader = (title: string, subtitle?: string) => (
     <View style={styles.header}>
       <Pressable accessibilityRole="button" accessibilityLabel="Quay lại" style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Ionicons name="arrow-back" size={20} color={palette.surface} />
+        <Ionicons name="arrow-back" size={19} color={palette.surface} />
       </Pressable>
       <View style={styles.headerCopy}>
-        <Text style={styles.title}>{title}</Text>
-        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        <Text style={styles.title} numberOfLines={1}>
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text style={styles.subtitle} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        ) : null}
       </View>
     </View>
   );
@@ -97,6 +95,33 @@ export function ConversationScreen({ navigation, route }: Props) {
       }
     } catch (nextError) {
       Alert.alert('Không chọn được ảnh', nextError instanceof Error ? nextError.message : 'Không mở được thư viện ảnh.');
+    }
+  };
+
+  const handleLoadOlder = async () => {
+    if (!conversation?.hasMoreBefore || !conversation.nextBeforeMessageId || loadingOlder) {
+      return;
+    }
+
+    setLoadingOlder(true);
+    try {
+      const olderPage = await loadConversationDetail(conversation.id, {
+        beforeMessageId: conversation.nextBeforeMessageId,
+      });
+      if (!olderPage) return;
+      setConversation((prev) =>
+        prev
+          ? {
+              ...prev,
+              ...olderPage,
+              messages: mergeMessagesChronologically(olderPage.messages || [], prev.messages || []),
+            }
+          : olderPage,
+      );
+    } catch (nextError) {
+      console.warn('Không tải thêm lịch sử hội thoại:', nextError);
+    } finally {
+      setLoadingOlder(false);
     }
   };
 
@@ -126,21 +151,18 @@ export function ConversationScreen({ navigation, route }: Props) {
     <View style={styles.safe}>
       {renderHeader(
         conversation.title,
-        `${conversation.channel.toUpperCase()} • ${
+        `${getConversationChannelShortLabel(conversation.channel)} • ${
           conversation.aiStatus === 'ready' ? 'AI đang hỗ trợ' : 'Đang chờ nhân viên'
         }`,
       )}
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.aiHintCard}>
-          <Text style={styles.aiHintTitle}>Gợi ý AI theo kênh</Text>
-          <Text style={styles.aiHintText}>{aiHintByChannel[conversation.channel]}</Text>
-        </View>
-
-        {(conversation.messages || []).map((message) => (
-          <MessageBubble key={message.id} message={message} currentUserName={currentUser.username} />
-        ))}
-      </ScrollView>
+      <ChatMessageList
+        messages={conversation.messages || []}
+        currentUserName={currentUser.username}
+        hasMoreBefore={conversation.hasMoreBefore}
+        loadingOlder={loadingOlder}
+        onLoadOlder={handleLoadOlder}
+      />
 
         <ChatComposer
           value={draft}
@@ -210,53 +232,35 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: palette.dark,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#243040',
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerCopy: {
     flex: 1,
-    gap: spacing.xs,
+    gap: 2,
   },
   title: {
     color: palette.surface,
-    fontSize: 22,
+    fontSize: 16,
+    lineHeight: 20,
     fontWeight: '800',
     flexShrink: 1,
   },
   subtitle: {
     color: '#c9d3e2',
-  },
-  content: {
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  aiHintCard: {
-    backgroundColor: palette.accentSoft,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    gap: spacing.sm,
-    borderWidth: 1,
-    borderColor: '#efd68f',
-  },
-  aiHintTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: palette.ink,
-  },
-  aiHintText: {
-    color: palette.ink,
-    lineHeight: 22,
+    fontSize: 11,
+    lineHeight: 14,
   },
 });

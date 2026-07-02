@@ -8,13 +8,24 @@ export interface ApiEnvelope<T = unknown> {
   [key: string]: unknown;
 }
 
-const appendImageToFormData = (formData: FormData, image: UploadImageFile) => {
+interface MessagePageParams {
+  limit?: number;
+  beforeMessageId?: string | null;
+}
+
+interface MessagePagePagination {
+  limit?: number;
+  hasMoreBefore?: boolean;
+  nextBeforeMessageId?: string | number | null;
+}
+
+const appendImageToFormData = (formData: FormData, image: UploadImageFile, fieldName = 'image') => {
   if (image.file) {
-    formData.append('image', image.file as Blob, image.name);
+    formData.append(fieldName, image.file as Blob, image.name);
     return;
   }
 
-  formData.append('image', {
+  formData.append(fieldName, {
     uri: image.uri,
     name: image.name,
     type: image.mimeType,
@@ -62,6 +73,17 @@ export const checkAccountApi = () =>
 export const logoutApi = () =>
   apiClient.post('/api/v1/logout') as Promise<ApiEnvelope<null>>;
 
+export const uploadAccountAvatarApi = (image: UploadImageFile) => {
+  const formData = new FormData();
+  appendImageToFormData(formData, image, 'avatar');
+
+  return apiClient.post('/api/v1/account/avatar', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  }) as Promise<ApiEnvelope<{ photo_url?: string; object_key?: string; content_type?: string; size?: number }>>;
+};
+
 export const readChatGroupRoomsApi = () =>
   apiClient.get('/api/chat-groups/rooms', {
     params: {
@@ -73,12 +95,16 @@ export const readChatGroupRoomsApi = () =>
 export const ensureWebsiteChatGroupRoomApi = () =>
   apiClient.post('/api/chat-groups/rooms/website-entry') as Promise<ApiEnvelope<{ room?: unknown }>>;
 
-export const readChatGroupRoomMessagesApi = (roomId: string) =>
+export const readChatGroupRoomMessagesApi = (roomId: string, {
+  limit = 30,
+  beforeMessageId = null,
+}: MessagePageParams = {}) =>
   apiClient.get(`/api/chat-groups/rooms/${roomId}/messages`, {
     params: {
-      limit: 80,
+      limit,
+      beforeMessageId: beforeMessageId || undefined,
     },
-  }) as Promise<ApiEnvelope<{ room?: unknown; messages?: unknown[] }>>;
+  }) as Promise<ApiEnvelope<{ room?: unknown; messages?: unknown[]; pagination?: MessagePagePagination }>>;
 
 export const readChatGroupRoomInfoApi = (roomId: string) =>
   apiClient.get(`/api/chat-groups/rooms/${roomId}/info`) as Promise<ApiEnvelope<{ room?: unknown }>>;
@@ -164,12 +190,16 @@ export const readChatConversationsApi = ({ limit = 50, offset = 0 } = {}) =>
     nextOffset?: number | null;
   } }>>;
 
-export const readChatConversationMessagesApi = (conversationId: string) =>
+export const readChatConversationMessagesApi = (conversationId: string, {
+  limit = 30,
+  beforeMessageId = null,
+}: MessagePageParams = {}) =>
   apiClient.get(`/api/chat/conversations/${conversationId}/messages`, {
     params: {
-      limit: 80,
+      limit,
+      beforeMessageId: beforeMessageId || undefined,
     },
-  }) as Promise<ApiEnvelope<{ conversation?: unknown; messages?: unknown[] }>>;
+  }) as Promise<ApiEnvelope<{ conversation?: unknown; messages?: unknown[]; pagination?: MessagePagePagination }>>;
 
 export const sendChatConversationMessageApi = (conversationId: string, text: string) =>
   apiClient.post(`/api/chat/conversations/${conversationId}/messages`, { text }) as Promise<

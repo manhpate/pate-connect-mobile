@@ -6,9 +6,11 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, Vi
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
-  GOOGLE_ANDROID_CLIENT_ID,
+  GOOGLE_ANDROID_CLIENT_ID_FOR_REQUEST,
+  GOOGLE_ANDROID_CONFIG_ERROR,
   GOOGLE_IOS_CLIENT_ID,
   GOOGLE_WEB_CLIENT_ID,
+  IS_GOOGLE_ANDROID_CONFIGURED,
 } from '../config/googleAuth';
 import { useAppSession } from '../context/AppSessionContext';
 import { signInFirebaseWithGooglePopup, signInFirebaseWithGoogleToken } from '../services/firebaseAuth';
@@ -24,14 +26,15 @@ export function WelcomeScreen() {
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [googleError, setGoogleError] = useState('');
   const isBootstrapping = authState === 'loading';
+  const isGoogleAndroidMissing = Platform.OS === 'android' && !IS_GOOGLE_ANDROID_CONFIGURED;
   const [request, response, promptAsync] = Google.useAuthRequest({
     iosClientId: GOOGLE_IOS_CLIENT_ID,
-    androidClientId: GOOGLE_ANDROID_CLIENT_ID,
+    androidClientId: GOOGLE_ANDROID_CLIENT_ID_FOR_REQUEST,
     webClientId: GOOGLE_WEB_CLIENT_ID,
     scopes: ['profile', 'email'],
     selectAccount: true,
   });
-  const isGoogleDisabled = (Platform.OS !== 'web' && !request) || googleSubmitting || isBootstrapping;
+  const isGoogleDisabled = (Platform.OS !== 'web' && !request && !isGoogleAndroidMissing) || googleSubmitting || isBootstrapping;
 
   const xuLyDangNhap = async () => {
     if (!tenDangNhap.trim() || !password.trim()) {
@@ -108,7 +111,7 @@ export function WelcomeScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.body}>
         <View style={styles.formCard}>
-          <Text style={styles.sectionTitle}>Đăng nhập Chat nhóm doanh nghiệp</Text>
+          <Text style={styles.sectionTitle}>Đăng nhập Pate Connect</Text>
           <TextInput
             value={tenDangNhap}
             onChangeText={setTenDangNhap}
@@ -146,6 +149,12 @@ export function WelcomeScreen() {
               setGoogleSubmitting(true);
               setGoogleError('');
               try {
+                if (isGoogleAndroidMissing) {
+                  setGoogleError(GOOGLE_ANDROID_CONFIG_ERROR);
+                  setGoogleSubmitting(false);
+                  return;
+                }
+
                 if (Platform.OS === 'web') {
                   const profile = await signInFirebaseWithGooglePopup();
                   await signInWithGoogleProfile(profile);

@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "Chat nhóm doanh nghiệp",
+    "name": "Pate Connect",
     "slug": "pate-connect-mobile",
     "scheme": "com.pate.connect",
-    "version": "1.0.0",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -11,7 +11,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#151a22"
+      "backgroundColor": "#ffffff"
     },
     "ios": {
       "supportsTablet": true,
@@ -24,9 +24,10 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#151a22"
+        "backgroundColor": "#ffffff"
       },
-      "package": "com.pate.connect",
+      "package": "invaihn.vn.pateconnect",
+      "versionCode": 5,
       "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -34,6 +35,9 @@
         "INTERNET",
         "RECORD_AUDIO",
         "MODIFY_AUDIO_SETTINGS"
+      ],
+      "blockedPermissions": [
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"
       ]
     },
     "web": {
@@ -41,7 +45,14 @@
     },
     "plugins": [
       "expo-font",
-      "expo-web-browser"
-    ]
+      "expo-web-browser",
+      "./plugins/with-agora-no-screen-sharing"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ee618e6e-99ad-48eb-a742-c8146c8e5547"
+      }
+    },
+    "owner": "manhpate"
   }
 }

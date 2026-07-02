@@ -27,6 +27,7 @@ import {
   sendChatGroupImageApi,
   sendChatGroupMessageApi,
   updateChatGroupRoomInfoApi,
+  uploadAccountAvatarApi,
   uploadChatGroupRoomFileApi,
 } from '../services/mobileApi';
 import { setApiAccessToken } from '../services/apiClient';
@@ -38,10 +39,12 @@ import {
   ConversationSummary,
   GroupFile,
   GroupRoom,
+  MessagePageState,
   NotificationItem,
   UploadFile,
   UploadImageFile,
 } from '../types/app';
+import { mergeMessagesChronologically } from '../utils/messageMerge';
 import {
   mapAccount,
   mapAppMessage,
@@ -49,6 +52,7 @@ import {
   mapGroupFile,
   mapGroupRoom,
   mapNotificationItem,
+  normalizeConversationCustomerName,
 } from '../utils/mappers';
 
 type AuthState = 'loading' | 'signed_out' | 'ready';
@@ -56,6 +60,7 @@ type AuthState = 'loading' | 'signed_out' | 'ready';
 const CONVERSATION_PAGE_SIZE = 30;
 const CONVERSATION_FILTER_PAGE_SIZE = 100;
 const CONVERSATION_FILTER_MAX_PAGES = 3;
+const CHAT_MESSAGE_PAGE_SIZE = 30;
 const NOTIFICATION_PAGE_SIZE = 10;
 
 interface SignInResult {
@@ -87,6 +92,7 @@ interface AppSessionContextValue {
     photoURL?: string;
   }) => Promise<SignInResult>;
   signOut: () => Promise<void>;
+  uploadAccountAvatar: (image: UploadImageFile) => Promise<AppAccount | null>;
   refreshConversations: () => Promise<void>;
   loadMoreConversations: () => Promise<void>;
   loadConversationsUntilChannel: (channel: Channel) => Promise<boolean>;
@@ -94,7 +100,7 @@ interface AppSessionContextValue {
   refreshNotifications: () => Promise<void>;
   loadMoreNotifications: () => Promise<void>;
   ensureCustomerPrimaryRoom: () => Promise<GroupRoom | null>;
-  loadRoomDetail: (roomId: string) => Promise<GroupRoom | null>;
+  loadRoomDetail: (roomId: string, options?: { beforeMessageId?: string | null }) => Promise<GroupRoom | null>;
   loadRoomInfo: (roomId: string) => Promise<GroupRoom | null>;
   loadRoomFiles: (roomId: string) => Promise<GroupFile[]>;
   uploadRoomFile: (roomId: string, file: UploadFile) => Promise<GroupFile | null>;
@@ -105,7 +111,7 @@ interface AppSessionContextValue {
   createPrivateRoomFromMember: (sourceRoomId: string, targetUserId: number) => Promise<GroupRoom | null>;
   renameRoom: (roomId: string, nextName: string) => Promise<GroupRoom | null>;
   removeMemberFromRoom: (roomId: string, memberId: string) => Promise<GroupRoom | null>;
-  loadConversationDetail: (conversationId: string) => Promise<ConversationSummary | null>;
+  loadConversationDetail: (conversationId: string, options?: { beforeMessageId?: string | null }) => Promise<ConversationSummary | null>;
   markConversationRead: (conversationId: string) => Promise<void>;
   sendConversationMessage: (conversationId: string, body: string) => Promise<AppMessage | null>;
   sendConversationImage: (conversationId: string, body: string, image: UploadImageFile) => Promise<AppMessage[]>;
@@ -154,11 +160,14 @@ const upsertRoom = (rooms: GroupRoom[], room: GroupRoom) => {
   }
 
   const next = [...rooms];
+  const hasIncomingMessages = room.messages.length > 0;
   next[index] = {
     ...next[index],
     ...room,
     files: room.files.length > 0 ? room.files : next[index].files,
-    messages: room.messages.length > 0 ? room.messages : next[index].messages,
+    messages: hasIncomingMessages ? room.messages : next[index].messages,
+    hasMoreBefore: hasIncomingMessages ? room.hasMoreBefore : next[index].hasMoreBefore,
+    nextBeforeMessageId: hasIncomingMessages ? room.nextBeforeMessageId : next[index].nextBeforeMessageId,
     members: room.members.length > 0 ? room.members : next[index].members,
   };
   return sortRooms(next);
@@ -171,10 +180,13 @@ const upsertConversation = (conversations: ConversationSummary[], conversation: 
   }
 
   const next = [...conversations];
+  const hasIncomingMessages = Boolean(conversation.messages?.length);
   next[index] = {
     ...next[index],
     ...conversation,
-    messages: conversation.messages?.length ? conversation.messages : next[index].messages,
+    messages: hasIncomingMessages ? conversation.messages : next[index].messages,
+    hasMoreBefore: hasIncomingMessages ? conversation.hasMoreBefore : next[index].hasMoreBefore,
+    nextBeforeMessageId: hasIncomingMessages ? conversation.nextBeforeMessageId : next[index].nextBeforeMessageId,
   };
   return next;
 };
@@ -192,6 +204,13 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 
   return fallback;
 };
+
+const mapMessagePageState = (pagination: Record<string, unknown> | undefined | null): MessagePageState => ({
+  hasMoreBefore: Boolean(pagination?.hasMoreBefore),
+  nextBeforeMessageId: pagination?.nextBeforeMessageId != null
+    ? String(pagination.nextBeforeMessageId)
+    : null,
+});
 
 export function AppSessionProvider({ children }: { children: React.ReactNode }) {
   const [authState, setAuthState] = useState<AuthState>('loading');
@@ -515,6 +534,31 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     await clearSessionState();
   }, [clearSessionState]);
 
+  const uploadAccountAvatar = useCallback(async (image: UploadImageFile) => {
+    const response = await uploadAccountAvatarApi(image);
+    if (Number(response?.EC) !== 0) {
+      throw new Error(response?.EM || 'Không cập nhật được ảnh đại diện');
+    }
+
+    const photoUrl = String(response?.DT?.photo_url || '').trim();
+    if (!photoUrl) {
+      throw new Error('Máy chủ chưa trả về ảnh đại diện mới');
+    }
+
+    const previousUser = currentUserRef.current;
+    if (!previousUser) {
+      return null;
+    }
+
+    const nextUser = {
+      ...previousUser,
+      photoUrl,
+    };
+    currentUserRef.current = nextUser;
+    setCurrentUser(nextUser);
+    return nextUser;
+  }, []);
+
   const refreshRooms = useCallback(async () => {
     await refreshRoomsForUser();
   }, [refreshRoomsForUser]);
@@ -698,22 +742,43 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
 
   const ensureCustomerPrimaryRoom = useCallback(async () => ensureCustomerPrimaryRoomForUser(), [ensureCustomerPrimaryRoomForUser]);
 
-  const loadRoomDetail = useCallback(async (roomId: string) => {
-    const response = await readChatGroupRoomMessagesApi(roomId);
+  const loadRoomDetail = useCallback(async (roomId: string, options: { beforeMessageId?: string | null } = {}) => {
+    const beforeMessageId = String(options.beforeMessageId || '').trim();
+    const response = await readChatGroupRoomMessagesApi(roomId, {
+      limit: CHAT_MESSAGE_PAGE_SIZE,
+      beforeMessageId,
+    });
     if (Number(response?.EC) !== 0 || !response?.DT?.room) {
       throw new Error(response?.EM || 'Không tải được nội dung nhóm chat');
     }
 
+    const pagination = mapMessagePageState(response?.DT?.pagination as Record<string, unknown> | undefined);
     const room = mapGroupRoom(
       (response.DT.room || {}) as Record<string, unknown>,
       {
         messages: Array.isArray(response?.DT?.messages)
           ? response.DT.messages.map((message) => mapAppMessage((message || {}) as Record<string, unknown>))
           : [],
+        hasMoreBefore: pagination.hasMoreBefore,
+        nextBeforeMessageId: pagination.nextBeforeMessageId,
       },
     );
 
-    setRooms((prev) => upsertRoom(prev, room));
+    setRooms((prev) => {
+      const existing = prev.find((item) => item.id === room.id);
+      if (!existing) return sortRooms([...prev, room]);
+
+      const mergedRoom = {
+        ...existing,
+        ...room,
+        files: existing.files.length ? existing.files : room.files,
+        members: room.members.length ? room.members : existing.members,
+        messages: beforeMessageId
+          ? mergeMessagesChronologically(room.messages, existing.messages)
+          : room.messages,
+      };
+      return upsertRoom(prev, mergedRoom);
+    });
     return room;
   }, []);
 
@@ -897,20 +962,51 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
     return room;
   }, []);
 
-  const loadConversationDetail = useCallback(async (conversationId: string) => {
-    const response = await readChatConversationMessagesApi(conversationId);
+  const loadConversationDetail = useCallback(async (
+    conversationId: string,
+    options: { beforeMessageId?: string | null } = {},
+  ) => {
+    const beforeMessageId = String(options.beforeMessageId || '').trim();
+    const response = await readChatConversationMessagesApi(conversationId, {
+      limit: CHAT_MESSAGE_PAGE_SIZE,
+      beforeMessageId,
+    });
     if (Number(response?.EC) !== 0 || !response?.DT?.conversation) {
       throw new Error(response?.EM || 'Không tải được hội thoại');
     }
 
+    const pagination = mapMessagePageState(response?.DT?.pagination as Record<string, unknown> | undefined);
+    const messages = Array.isArray(response?.DT?.messages)
+      ? response.DT.messages.map((message) => mapAppMessage((message || {}) as Record<string, unknown>))
+      : [];
+    const summary = mapConversationSummary((response.DT.conversation || {}) as Record<string, unknown>);
+    const fallbackCustomerName = summary.customerName || normalizeConversationCustomerName({
+      name: messages.find((message) => message.authorType === 'customer')?.authorName || '',
+      customerId: '',
+      channel: summary.channel,
+      channelLabel: summary.title,
+    });
     const conversation = {
-      ...mapConversationSummary((response.DT.conversation || {}) as Record<string, unknown>),
-      messages: Array.isArray(response?.DT?.messages)
-        ? response.DT.messages.map((message) => mapAppMessage((message || {}) as Record<string, unknown>))
-        : [],
+      ...summary,
+      customerName: fallbackCustomerName,
+      title: fallbackCustomerName && !summary.customerName ? `${summary.title} | ${fallbackCustomerName}` : summary.title,
+      messages,
+      hasMoreBefore: pagination.hasMoreBefore,
+      nextBeforeMessageId: pagination.nextBeforeMessageId,
     };
 
-    setConversations((prev) => upsertConversation(prev, conversation));
+    setConversations((prev) => {
+      const existing = prev.find((item) => item.id === conversation.id);
+      if (!existing) return upsertConversation(prev, conversation);
+
+      return upsertConversation(prev, {
+        ...existing,
+        ...conversation,
+        messages: beforeMessageId
+          ? mergeMessagesChronologically(conversation.messages || [], existing.messages || [])
+          : conversation.messages,
+      });
+    });
     return conversation;
   }, []);
 
@@ -1016,6 +1112,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       signInWithPassword,
       signInWithGoogleProfile,
       signOut,
+      uploadAccountAvatar,
       refreshConversations,
       loadMoreConversations,
       loadConversationsUntilChannel,
@@ -1077,6 +1174,7 @@ export function AppSessionProvider({ children }: { children: React.ReactNode }) 
       signInWithGoogleProfile,
       signInWithPassword,
       signOut,
+      uploadAccountAvatar,
     ],
   );
 

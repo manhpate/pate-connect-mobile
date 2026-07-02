@@ -9,6 +9,7 @@ import { useAppSession } from '../../context/AppSessionContext';
 import { palette, spacing } from '../../theme/tokens';
 import { GroupRoom } from '../../types/app';
 import { RootStackParamList } from '../../types/app';
+import { mergeMessagesChronologically } from '../../utils/messageMerge';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupChat'>;
 
@@ -27,6 +28,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
   );
   const [room, setRoom] = useState<GroupRoom | null>(roomSnapshot);
   const [loading, setLoading] = useState(!roomSnapshot);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -38,6 +40,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
           files: prev.files.length ? prev.files : roomSnapshot.files,
           members: roomSnapshot.members.length ? roomSnapshot.members : prev.members,
           messages: prev.messages.length ? prev.messages : roomSnapshot.messages,
+          hasMoreBefore: prev.hasMoreBefore || roomSnapshot.hasMoreBefore,
+          nextBeforeMessageId: prev.nextBeforeMessageId || roomSnapshot.nextBeforeMessageId,
           canManageMembers: prev.canManageMembers || roomSnapshot.canManageMembers,
           canEditRoom: prev.canEditRoom || roomSnapshot.canEditRoom,
           canRemoveMembers: prev.canRemoveMembers || roomSnapshot.canRemoveMembers,
@@ -112,6 +116,33 @@ export function GroupChatScreen({ navigation, route }: Props) {
     );
   }
 
+  const handleLoadOlder = async () => {
+    if (!room.hasMoreBefore || !room.nextBeforeMessageId || loadingOlder) {
+      return;
+    }
+
+    setLoadingOlder(true);
+    try {
+      const olderPage = await loadRoomDetail(room.id, { beforeMessageId: room.nextBeforeMessageId });
+      if (!olderPage) return;
+      setRoom((prev) =>
+        prev
+          ? {
+              ...prev,
+              ...olderPage,
+              files: prev.files.length ? prev.files : olderPage.files,
+              members: olderPage.members.length ? olderPage.members : prev.members,
+              messages: mergeMessagesChronologically(olderPage.messages, prev.messages),
+            }
+          : olderPage,
+      );
+    } catch (nextError) {
+      console.warn('Không tải thêm lịch sử nhóm chat:', nextError);
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
   return (
     <GroupChatPanel
       room={room}
@@ -126,6 +157,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
       onBack={() => navigation.goBack()}
       onOpenFiles={() => navigation.navigate('FileVault', { roomId: room.id })}
       onOpenInfo={() => navigation.navigate('GroupInfo', { roomId: room.id })}
+      loadingOlder={loadingOlder}
+      onLoadOlder={handleLoadOlder}
     />
   );
 }

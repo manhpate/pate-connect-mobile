@@ -26,6 +26,7 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 expo-web*.log
+.codex-*.log
 
 # macOS
 .DS_Store

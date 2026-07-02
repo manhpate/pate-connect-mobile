@@ -8,12 +8,14 @@ import { useAppSession } from '../../context/AppSessionContext';
 import { palette, spacing } from '../../theme/tokens';
 import { GroupRoom } from '../../types/app';
 import { RootStackParamList } from '../../types/app';
+import { mergeMessagesChronologically } from '../../utils/messageMerge';
 
 export function CustomerChatScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { currentUser, rooms, ensureCustomerPrimaryRoom, loadRoomDetail, sendRoomMessage, sendRoomImage, markRoomRead } = useAppSession();
   const [room, setRoom] = useState<GroupRoom | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState('');
 
   const roomId = useMemo(
@@ -84,6 +86,33 @@ export function CustomerChatScreen() {
     );
   }
 
+  const handleLoadOlder = async () => {
+    if (!room.hasMoreBefore || !room.nextBeforeMessageId || loadingOlder) {
+      return;
+    }
+
+    setLoadingOlder(true);
+    try {
+      const olderPage = await loadRoomDetail(room.id, { beforeMessageId: room.nextBeforeMessageId });
+      if (!olderPage) return;
+      setRoom((prev) =>
+        prev
+          ? {
+              ...prev,
+              ...olderPage,
+              files: prev.files.length ? prev.files : olderPage.files,
+              members: olderPage.members.length ? olderPage.members : prev.members,
+              messages: mergeMessagesChronologically(olderPage.messages, prev.messages),
+            }
+          : olderPage,
+      );
+    } catch (nextError) {
+      console.warn('Không tải thêm lịch sử chat khách:', nextError);
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
   return (
     <GroupChatPanel
       room={room}
@@ -97,6 +126,8 @@ export function CustomerChatScreen() {
       }}
       onOpenFiles={() => navigation.navigate('FileVault', { roomId: room.id })}
       onOpenInfo={() => navigation.navigate('GroupInfo', { roomId: room.id })}
+      loadingOlder={loadingOlder}
+      onLoadOlder={handleLoadOlder}
     />
   );
 }
